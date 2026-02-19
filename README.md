@@ -23,15 +23,7 @@ Most multi-agent setups are fixed pipelines: step A, then B, then C. Orchestrate
 
 The supervisor reads your plan, decides what agent to run next, reads the report back, and adapts — choosing which agent variant to use, whether to re-review, when to escalate from `implement` to `implement-deliberate`. It can skip research if the plan is clear, run parallel reviewers for risky slices, or switch implementation strategy mid-plan.
 
-The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it a framework, but the LLM makes the judgment calls within it.
-
-### Similar to other loop systems
-
-| System style | Similarity | Key difference in Orchestrate |
-|---|---|---|
-| Aider architect-style loops | Plan-driven iterative implementation/review cycles | Supervisor can switch agent/model variants per slice, not just one architect/editor pair |
-| Ralph/bash pipelines | Repeated shell-driven loop over plan slices | Loop control is delegated to an LLM supervisor, not fixed script logic |
-| Fixed DAG multi-agent pipelines | Uses specialized agents with clear roles | Execution order is adaptive; the supervisor can skip/retry/escalate dynamically |
+The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it a framework, but the LLM makes the judgment calls within it. Unlike fixed pipelines or single architect/editor pairs, the supervisor can switch agent variants per slice, skip steps, retry, or escalate — adapting the workflow as it goes.
 
 ## Install
 
@@ -39,14 +31,14 @@ The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it
 
 **Claude Code** (plugin marketplace — recommend project scope):
 ```bash
-/plugin marketplace add jimmyyao/orchestrate
-/plugin install orchestrate@jimmyyao-orchestrate --scope project
+/plugin marketplace add haowjy/orchestrate
+/plugin install orchestrate@haowjy-orchestrate --scope project
 ```
 `--scope project` installs into `.claude/settings.json` so all collaborators get the plugin automatically. Use `--scope local` for personal-only.
 
 **Codex** (built-in skill installer):
 ```
-$skill-installer install https://github.com/jimmyyao/orchestrate
+$skill-installer install https://github.com/haowjy/orchestrate
 ```
 Installs to `~/.codex/skills/orchestrate`. Requires `codex --enable skills` feature flag.
 
@@ -55,7 +47,7 @@ Installs to `~/.codex/skills/orchestrate`. Requires `codex --enable skills` feat
 ### Option B: Per-repo install (universal, works with all CLIs)
 
 ```bash
-git submodule add https://github.com/jimmyyao/orchestrate .agents/skills/orchestrate
+git submodule add https://github.com/haowjy/orchestrate .agents/skills/orchestrate
 cd .agents/skills
 for skill in orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
 cd -

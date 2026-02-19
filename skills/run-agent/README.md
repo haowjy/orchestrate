@@ -77,13 +77,22 @@ Snapshots `handoffs/latest.md` into a timestamped file:
 scripts/save-handoff.sh .runs/plans/my-plan
 ```
 
+## Script Unit Tests
+
+```bash
+tests/run-agent-unit.sh
+```
+
 ## Environment Variables
 
 | Variable | Description | Default |
 |---|---|---|
-| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` next to skill root |
+| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` under working directory |
 | `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI | Auto-detect from model name |
+| `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
+
+Tool allowlists are applied only when routed to Claude (`--allowedTools`). Codex and OpenCode currently do not expose equivalent allowlist flags in `exec/run`.
 
 ## Custom Agents
 
@@ -102,5 +111,16 @@ skills:
 
 Your prompt here. Use {{TEMPLATE_VARS}} for dynamic values.
 ```
+
+Agent files are meant to be edited per project after install. You can:
+- tune built-in prompts for your codebase conventions,
+- add new agent variants for specific stacks/workflows,
+- keep shared rules in root `AGENTS.md`/`CLAUDE.md` that agents are instructed to read.
+
+Agent lookup precedence:
+1. `ORCHESTRATE_AGENT_DIR/<agent>.md` (if set)
+2. `<workdir>/.agents/skills/run-agent/agents/<agent>.md`
+3. `<workdir>/.claude/skills/run-agent/agents/<agent>.md`
+4. bundled `agents/<agent>.md`
 
 See the `model-guidance` skill for guidance on when to use each variant.

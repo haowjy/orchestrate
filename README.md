@@ -4,13 +4,18 @@ Stop satisficing with one CLI. Use Claude Code, Codex, and OpenCode together —
 
 Orchestrate is a multi-agent supervisor that routes specialized agents across CLI harnesses. Codex writes the code, Opus reviews it, Haiku commits it. You write a plan, it handles the rest.
 
+It is built from:
+- `skills/orchestrate/` — supervisor loop logic
+- `skills/run-agent/` — execution engine (`run-agent.sh`) + agent definitions
+- Native CLI install mechanisms (plugin/skills installers per harness)
+
 ## Why
 
 ### `run-agent.sh` — one wrapper, every CLI
 
 Agents are just markdown files with a model name in YAML frontmatter. `run-agent.sh` inspects the model string and routes to the right CLI — Claude Code, Codex, or OpenCode — normalizing prompt composition, tool allowlists, and execution along the way.
 
-Each CLI has strengths: Codex for exhaustive code generation, Claude Opus for thoughtful review, Sonnet for fast iteration. You shouldn't have to care about the plumbing differences between them — different tool name conventions (PascalCase vs lowercase), different effort flags, different JSON output formats. `run-agent.sh` handles all of it so agents are portable across harnesses.
+Each CLI has strengths: Codex for exhaustive code generation, Claude Opus for thoughtful review, Sonnet for fast iteration. You shouldn't have to care about the plumbing differences between them — different tool-control surfaces, different effort flags, different JSON output formats. `run-agent.sh` handles all of it so agents are portable across harnesses.
 
 ### LLM-controlled agent loops
 
@@ -20,35 +25,21 @@ The supervisor reads your plan, decides what agent to run next, reads the report
 
 The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it a framework, but the LLM makes the judgment calls within it.
 
+### Similar to other loop systems
+
+| System style | Similarity | Key difference in Orchestrate |
+|---|---|---|
+| Aider architect-style loops | Plan-driven iterative implementation/review cycles | Supervisor can switch agent/model variants per slice, not just one architect/editor pair |
+| Ralph/bash pipelines | Repeated shell-driven loop over plan slices | Loop control is delegated to an LLM supervisor, not fixed script logic |
+| Fixed DAG multi-agent pipelines | Uses specialized agents with clear roles | Execution order is adaptive; the supervisor can skip/retry/escalate dynamically |
+
 ## Install
 
-### Claude Code (recommended)
+Use each CLI's native skill/plugin installer:
 
-```bash
-# Plugin marketplace
-/plugin marketplace add jimmyyao/orchestrate
-
-# Or load directly
-claude --plugin-dir /path/to/orchestrate
-```
-
-### Codex
-
-```bash
-# Clone into your project, then install
-git clone https://github.com/jimmyyao/orchestrate.git /tmp/orchestrate
-/tmp/orchestrate/scripts/install.sh codex
-```
-
-### OpenCode
-
-```bash
-# Clone into your project, then install
-git clone https://github.com/jimmyyao/orchestrate.git /tmp/orchestrate
-/tmp/orchestrate/scripts/install.sh opencode
-```
-
-Both Codex and OpenCode discover skills via `.agents/skills/` — the install script symlinks them there.
+- Claude Code: `/plugin marketplace add jimmyyao/orchestrate`
+- Codex: install from this GitHub repo via Codex's built-in skills flow
+- OpenCode: install from this GitHub repo via OpenCode's built-in skills flow
 
 ## Getting Started
 
@@ -96,8 +87,8 @@ The skill structure works natively across all three CLIs:
 | CLI | Discovery | Install |
 |-----|-----------|---------|
 | **Claude Code** | `.claude-plugin/plugin.json` → `skills/` | Marketplace or `--plugin-dir` |
-| **Codex** | `.agents/skills/*/SKILL.md` (walks to git root) | `scripts/install.sh codex` |
-| **OpenCode** | `.agents/skills/` + `.claude/skills/` (walks up) | `scripts/install.sh opencode` |
+| **Codex** | `.agents/skills/*/SKILL.md` (walks to git root) | Native Codex skills installer |
+| **OpenCode** | `.agents/skills/` + `.claude/skills/` (walks up) | Native OpenCode skills installer |
 
 Model routing is automatic — agent definitions specify a model name, and `run-agent.sh` routes to the correct CLI:
 
@@ -116,8 +107,6 @@ orchestrate/
 ├── .claude-plugin/          # Plugin manifest
 │   ├── plugin.json
 │   └── marketplace.json
-├── scripts/
-│   └── install.sh           # Cross-CLI install helper
 ├── skills/
 │   ├── orchestrate/         # Supervisor brain (loop logic only)
 │   │   ├── SKILL.md
@@ -180,31 +169,37 @@ All review agents support **dual mode**: given a plan, they review the plan; giv
 ## Running Agents Directly
 
 ```bash
+# From this repo root:
+AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
+
+# If installed into a project:
+# AGENT_RUNNER=.agents/skills/run-agent/scripts/run-agent.sh
+
 # Run an agent by name
-run-agent/scripts/run-agent.sh review -v SLICES_DIR=.runs/plans/my-plan/slices/01-foo
+"$AGENT_RUNNER" review -v SLICES_DIR=.runs/plans/my-plan/slices/01-foo
 
 # Override model on any agent
-run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
+"$AGENT_RUNNER" implement -m claude-opus-4-6
 
 # Ad-hoc (no agent definition)
-run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
+"$AGENT_RUNNER" --model claude-sonnet-4-6 --skills review -p "Review the changes"
 
 # Dry run — see composed prompt + CLI command without executing
-run-agent/scripts/run-agent.sh review --dry-run -v SLICES_DIR=/tmp/test
+"$AGENT_RUNNER" review --dry-run -v SLICES_DIR=/tmp/test
 
 # Use a provider/model format (auto-routes to opencode)
-run-agent/scripts/run-agent.sh --model anthropic/claude-sonnet-4-6 -p "Review the changes" --dry-run
+"$AGENT_RUNNER" --model anthropic/claude-sonnet-4-6 -p "Review the changes" --dry-run
 
 # Force all agents through opencode
-ORCHESTRATE_DEFAULT_CLI=opencode run-agent/scripts/run-agent.sh implement --dry-run
+ORCHESTRATE_DEFAULT_CLI=opencode "$AGENT_RUNNER" implement --dry-run
 
 # 3-way parallel research
 ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-claude \
-  run-agent/scripts/run-agent.sh research-claude -v PLAN_FILE=my-plan.md &
+  "$AGENT_RUNNER" research-claude -v PLAN_FILE=my-plan.md &
 ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-codex \
-  run-agent/scripts/run-agent.sh research-codex -v PLAN_FILE=my-plan.md &
+  "$AGENT_RUNNER" research-codex -v PLAN_FILE=my-plan.md &
 ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-kimi \
-  run-agent/scripts/run-agent.sh research-kimi -v PLAN_FILE=my-plan.md &
+  "$AGENT_RUNNER" research-kimi -v PLAN_FILE=my-plan.md &
 wait
 ```
 
@@ -214,28 +209,31 @@ wait
 
 | Variable | Description | Default |
 |---|---|---|
-| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` next to skill root |
+| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` under the active working directory |
 | `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
+| `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
 ### Model Overrides
 
 Every agent has a default model in its frontmatter. Override per-run:
 
 ```bash
+AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
+
 # Use a specific model for one run
-run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
+"$AGENT_RUNNER" implement -m claude-opus-4-6
 
 # Use provider/model format (routes to opencode automatically)
-run-agent/scripts/run-agent.sh implement -m anthropic/claude-sonnet-4-6
+"$AGENT_RUNNER" implement -m anthropic/claude-sonnet-4-6
 
 # Force all agents through claude CLI (even if model name suggests codex)
-ORCHESTRATE_DEFAULT_CLI=claude run-agent/scripts/run-agent.sh implement
+ORCHESTRATE_DEFAULT_CLI=claude "$AGENT_RUNNER" implement
 ```
 
 ### Custom Agents
 
-Create `run-agent/agents/my-agent.md` with YAML frontmatter:
+Create `skills/run-agent/agents/my-agent.md` (or `.agents/skills/run-agent/agents/my-agent.md` in your project) with YAML frontmatter:
 
 ```yaml
 ---
@@ -251,13 +249,38 @@ skills:
 Your prompt here. Use {{TEMPLATE_VARS}} for dynamic values.
 ```
 
+Agent definitions are intentionally user-editable after install. Common patterns:
+- Modify built-in agents in your project (for example `.agents/skills/run-agent/agents/implement.md`) to encode codebase-specific rules.
+- Add new project-specific agents (for example `implement-backend.md`, `review-security.md`) and run them directly with `run-agent.sh`.
+- Keep team conventions in project `AGENTS.md`/`CLAUDE.md`; the agent prompts already instruct subagents to read those files.
+
+Agent lookup precedence for `run-agent.sh <agent-name>`:
+1. `ORCHESTRATE_AGENT_DIR/<agent>.md` (if set)
+2. `<workdir>/.agents/skills/run-agent/agents/<agent>.md`
+3. `<workdir>/.claude/skills/run-agent/agents/<agent>.md`
+4. bundled `skills/run-agent/agents/<agent>.md`
+
 ### Custom Review Rules
 
-Add rules to `skills/review/references/`:
+Add rules to `skills/review/references/` (or `.agents/skills/review/references/` in your project):
 - `general.md` — always loaded (ships with the plugin)
 - `<directory>.md` — loaded when reviewing files under that top-level directory
 
 The review skill also reads `CLAUDE.md`/`AGENTS.md` from the project root for project-specific conventions.
+
+## Execution Mode and Safety
+
+`run-agent.sh` launches each harness in autonomous mode:
+- Claude CLI uses `--dangerously-skip-permissions`
+- Codex CLI uses `--full-auto`
+
+Tool allowlists are currently applied only for Claude (`--allowedTools`). Codex and OpenCode do not expose equivalent allowlist flags in `exec/run`.
+
+`run-agent.sh` auto-creates `ORCHESTRATE_RUNS_DIR/.gitignore` with:
+`*` and `!.gitignore`
+so runtime artifacts stay untracked without requiring parent `.gitignore` edits.
+
+Use this only in trusted repos/worktrees. Prefer reviewing `--dry-run` output when testing new agent prompts.
 
 ## CLI Requirements
 

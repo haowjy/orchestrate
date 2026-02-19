@@ -48,9 +48,10 @@ Every run appends a report instruction to the prompt. The subagent writes `repor
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ORCHESTRATE_RUNS_DIR` | Where to store run data (plans, logs, scratch) | `.runs/` next to skill root |
+| `ORCHESTRATE_RUNS_DIR` | Where to store run data (plans, logs, scratch) | `.runs/` under working directory |
 | `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
+| `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
 ## Model Routing
 
@@ -64,7 +65,7 @@ Models are automatically routed to the correct CLI based on naming conventions:
 
 The `opencode-` prefix is stripped before passing to the CLI. The `provider/model` format (containing `/`) is passed through as-is.
 
-Tool names in agent definitions use PascalCase (`Read,Edit,Write`). For opencode, tools are automatically lowercased at runtime.
+Tool names in agent definitions are normalized for Claude's `--allowedTools` casing (e.g., `read` -> `Read`, `websearch` -> `WebSearch`). Codex and OpenCode currently do not expose tool allowlist flags in `exec/run`.
 
 ## Agent Definition Format
 
@@ -83,6 +84,14 @@ skills:
 
 Your prompt here. Use {{TEMPLATE_VARS}} for dynamic values.
 ```
+
+These agent files are intentionally editable by end users after install. Customizing built-in prompts for a specific codebase is a supported workflow.
+
+Lookup precedence for `run-agent.sh <agent-name>`:
+1. `ORCHESTRATE_AGENT_DIR/<agent>.md` (if set)
+2. `<workdir>/.agents/skills/run-agent/agents/<agent>.md`
+3. `<workdir>/.claude/skills/run-agent/agents/<agent>.md`
+4. bundled `agents/<agent>.md`
 
 ### Frontmatter Fields
 

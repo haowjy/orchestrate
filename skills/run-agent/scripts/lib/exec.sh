@@ -7,18 +7,60 @@
 # This avoids eval and shell-injection risks.
 
 # Normalize tool names for the target CLI harness.
-# Agent definitions use PascalCase (Read,Edit,Write) — some CLIs need different casing.
+# Agent definitions may use inconsistent casing; Claude expects PascalCase names.
+normalize_claude_tool_token() {
+  local token="$1"
+  local base="$token"
+  local suffix=""
+
+  if [[ "$token" == *"("* ]]; then
+    base="${token%%(*}"
+    suffix="${token#"$base"}"
+  fi
+
+  case "$(echo "$base" | tr '[:upper:]' '[:lower:]')" in
+    read) base="Read" ;;
+    write) base="Write" ;;
+    edit) base="Edit" ;;
+    bash) base="Bash" ;;
+    glob) base="Glob" ;;
+    grep) base="Grep" ;;
+    websearch) base="WebSearch" ;;
+    webfetch) base="WebFetch" ;;
+    *) ;;
+  esac
+
+  echo "${base}${suffix}"
+}
+
 normalize_tools_for_harness() {
   local tool="$1" tools="$2"
   case "$tool" in
-    claude)   echo "$tools" ;;                              # PascalCase passthrough
+    claude)
+      local normalized=()
+      local raw token
+      IFS=',' read -ra raw <<< "$tools"
+      for token in "${raw[@]}"; do
+        token="$(echo "$token" | xargs)"
+        [[ -z "$token" ]] && continue
+        normalized+=("$(normalize_claude_tool_token "$token")")
+      done
+      if [[ ${#normalized[@]} -eq 0 ]]; then
+        echo "$tools"
+      else
+        local joined
+        joined="$(IFS=','; echo "${normalized[*]}")"
+        echo "$joined"
+      fi
+      ;;
     codex)    echo "" ;;                                    # codex ignores tool allowlists
-    opencode) echo "$tools" | tr '[:upper:]' '[:lower:]' ;; # lowercase for opencode
+    opencode) echo "" ;;                                    # opencode run has no allowlist flag
   esac
 }
 
 build_cli_command() {
   local tool
+  local normalized_tools
 
   # ORCHESTRATE_DEFAULT_CLI forces all model routing to a specific CLI.
   # Useful when you want all agents to run through one tool regardless of model name.
@@ -36,10 +78,11 @@ build_cli_command() {
   fi
 
   CLI_CMD_ARGV=()
+  normalized_tools="$(normalize_tools_for_harness "$tool" "$TOOLS")"
   case "$tool" in
     claude)
       # CLAUDECODE= unsets nested session check (env sets it for the subprocess)
-      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --output-format json --allowedTools "$TOOLS" --dangerously-skip-permissions)
+      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --output-format json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
       ;;
     codex)
       CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --full-auto --json -)
@@ -50,6 +93,10 @@ build_cli_command() {
       local effective_model
       effective_model="$(strip_model_prefix "$MODEL")"
       CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --variant "$EFFORT")
+      ;;
+    *)
+      echo "ERROR: Unsupported CLI harness: $tool" >&2
+      return 1
       ;;
   esac
 }

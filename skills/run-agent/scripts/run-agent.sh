@@ -11,17 +11,11 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"  # -P resolves symlinks to canonical path
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+CURRENT_DIR="$(pwd -P)"
+REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
 AGENTS_DIR="$(cd "$SCRIPT_DIR/../agents" && pwd -P)"
 SKILLS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-
-# Runs directory — portable, defaults to .runs/ sibling of skill root
-ORCHESTRATE_RUNS_DIR="${ORCHESTRATE_RUNS_DIR:-$SCRIPT_DIR/../.runs}"
-ORCHESTRATE_RUNS_DIR="$(mkdir -p "$ORCHESTRATE_RUNS_DIR" && cd "$ORCHESTRATE_RUNS_DIR" && pwd -P)"
-
-# Auto-bootstrap .runs/ on first use
-[[ -d "$ORCHESTRATE_RUNS_DIR/project" ]] || mkdir -p "$ORCHESTRATE_RUNS_DIR/project"/{scratch/code/smoke,logs/agent-runs}
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -53,10 +47,44 @@ source "$SCRIPT_DIR/lib/prompt.sh"
 source "$SCRIPT_DIR/lib/logging.sh"
 source "$SCRIPT_DIR/lib/exec.sh"
 
+# ─── Init Helpers ────────────────────────────────────────────────────────────
+
+init_work_dir() {
+  if ! WORK_DIR="$(cd "$WORK_DIR" 2>/dev/null && pwd -P)"; then
+    echo "ERROR: Working directory does not exist: $WORK_DIR" >&2
+    exit 1
+  fi
+
+  # Prefer the git root of the working dir so relative file lookups map to the target project.
+  REPO_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORK_DIR")"
+}
+
+init_runs_dir() {
+  local default_runs_dir="$WORK_DIR/.runs"
+  ORCHESTRATE_RUNS_DIR="${ORCHESTRATE_RUNS_DIR:-$default_runs_dir}"
+
+  if [[ "$ORCHESTRATE_RUNS_DIR" != /* ]]; then
+    ORCHESTRATE_RUNS_DIR="$WORK_DIR/$ORCHESTRATE_RUNS_DIR"
+  fi
+
+  ORCHESTRATE_RUNS_DIR="$(mkdir -p "$ORCHESTRATE_RUNS_DIR" && cd "$ORCHESTRATE_RUNS_DIR" && pwd -P)"
+  mkdir -p "$ORCHESTRATE_RUNS_DIR/project"/{scratch/code/smoke,logs/agent-runs}
+
+  # Make runtime artifacts self-ignoring, even if parent repo .gitignore was not configured.
+  if [[ ! -f "$ORCHESTRATE_RUNS_DIR/.gitignore" ]]; then
+    cat > "$ORCHESTRATE_RUNS_DIR/.gitignore" <<'EOF'
+*
+!.gitignore
+EOF
+  fi
+}
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 parse_args "$@"
+init_work_dir
 validate_args
+init_runs_dir
 
 COMPOSED_PROMPT="$(compose_prompt)"
 build_cli_command

@@ -54,6 +54,15 @@ derive_plan_root_from_plan_file() {
   echo "$ORCHESTRATE_RUNS_DIR/plans/$base"
 }
 
+sanitize_log_label() {
+  local label="$1"
+  label="${label// /-}"
+  label="$(echo "$label" | sed 's#[^A-Za-z0-9._-]#-#g')"
+  label="$(echo "$label" | sed 's/^-*//; s/-*$//')"
+  [[ -z "$label" ]] && label="run"
+  echo "$label"
+}
+
 # ─── Scope Inference ──────────────────────────────────────────────────────────
 
 infer_scope_root() {
@@ -102,7 +111,8 @@ infer_scope_root() {
 # ─── Log Setup ────────────────────────────────────────────────────────────────
 
 setup_logging() {
-  local label="${AGENT_NAME:-$MODEL}"
+  local label
+  label="$(sanitize_log_label "${AGENT_NAME:-$MODEL}")"
 
   # External interface: ORCHESTRATE_LOG_DIR. Internal shorthand: LOG_DIR.
   LOG_DIR="${ORCHESTRATE_LOG_DIR:-${LOG_DIR:-}}"

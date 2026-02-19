@@ -23,11 +23,69 @@ Options:
   -C, --cd DIR         Working directory for subprocess
 
 Environment:
-  ORCHESTRATE_RUNS_DIR   Where to store run data (default: .runs/ next to skill root)
+  ORCHESTRATE_RUNS_DIR   Where to store run data (default: .runs/ under working directory)
   ORCHESTRATE_LOG_DIR    Where to write logs (default: auto-derived from scope)
   ORCHESTRATE_DEFAULT_CLI  Force all model routing to a specific CLI (claude, codex, opencode)
+  ORCHESTRATE_AGENT_DIR  Override agent definition directory (highest precedence)
 EOF
   exit 1
+}
+
+require_option_value() {
+  local opt="$1"
+  local remaining_args="$2"
+
+  if [[ "$remaining_args" -lt 2 ]]; then
+    echo "ERROR: $opt requires a value." >&2
+    usage
+  fi
+}
+
+preparse_work_dir_override() {
+  local args=("$@")
+  local idx=0
+  while [[ $idx -lt ${#args[@]} ]]; do
+    case "${args[$idx]}" in
+      -C|--cd)
+        if [[ $((idx + 1)) -ge ${#args[@]} ]]; then
+          echo "ERROR: ${args[$idx]} requires a value." >&2
+          usage
+        fi
+        WORK_DIR="${args[$((idx + 1))]}"
+        idx=$((idx + 2))
+        ;;
+      *)
+        idx=$((idx + 1))
+        ;;
+    esac
+  done
+
+  if [[ "$WORK_DIR" != /* ]]; then
+    WORK_DIR="$(pwd -P)/$WORK_DIR"
+  fi
+}
+
+resolve_agent_file() {
+  local agent_name="$1"
+  local candidate
+  local -a dirs=()
+
+  if [[ -n "${ORCHESTRATE_AGENT_DIR:-}" ]]; then
+    dirs+=("$ORCHESTRATE_AGENT_DIR")
+  fi
+  dirs+=("$WORK_DIR/.agents/skills/run-agent/agents")
+  dirs+=("$WORK_DIR/.claude/skills/run-agent/agents")
+  dirs+=("$AGENTS_DIR")
+
+  for candidate_dir in "${dirs[@]}"; do
+    candidate="$candidate_dir/$agent_name.md"
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 # ─── Agent .md Parsing ──────────────────────────────────────────────────────
@@ -97,6 +155,8 @@ parse_agent_md() {
 # ─── Argument Parsing ────────────────────────────────────────────────────────
 
 parse_args() {
+  preparse_work_dir_override "$@"
+
   # First arg might be an agent name (not starting with -)
   if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
     AGENT_NAME="$1"
@@ -104,9 +164,10 @@ parse_args() {
   fi
 
   if [[ -n "$AGENT_NAME" ]]; then
-    AGENT_FILE="$AGENTS_DIR/$AGENT_NAME.md"
+    AGENT_FILE="$(resolve_agent_file "$AGENT_NAME" || true)"
     if [[ ! -f "$AGENT_FILE" ]]; then
-      echo "ERROR: Agent not found: $AGENT_FILE" >&2
+      echo "ERROR: Agent not found: $AGENT_NAME" >&2
+      echo "Checked: ORCHESTRATE_AGENT_DIR, $WORK_DIR/.agents/skills/run-agent/agents, $WORK_DIR/.claude/skills/run-agent/agents, $AGENTS_DIR" >&2
       exit 1
     fi
     parse_agent_md "$AGENT_FILE"
@@ -114,17 +175,42 @@ parse_args() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -m|--model)   MODEL="$2"; MODEL_FROM_CLI=true; shift 2 ;;
-      -e|--effort)  EFFORT="$2"; EFFORT_FROM_CLI=true; shift 2 ;;
-      -t|--tools)   TOOLS="$2"; TOOLS_FROM_CLI=true; shift 2 ;;
+      -m|--model)
+        require_option_value "$1" "$#"
+        MODEL="$2"
+        MODEL_FROM_CLI=true
+        shift 2
+        ;;
+      -e|--effort)
+        require_option_value "$1" "$#"
+        EFFORT="$2"
+        EFFORT_FROM_CLI=true
+        shift 2
+        ;;
+      -t|--tools)
+        require_option_value "$1" "$#"
+        TOOLS="$2"
+        TOOLS_FROM_CLI=true
+        shift 2
+        ;;
       -s|--skills)
+        require_option_value "$1" "$#"
         IFS=',' read -ra _skills <<< "$2"
         for s in "${_skills[@]}"; do SKILLS+=("$(echo "$s" | xargs)"); done
         shift 2
         ;;
-      -p|--prompt)  CLI_PROMPT="$2"; shift 2 ;;
-      -f|--file)    REF_FILES+=("$2"); shift 2 ;;
+      -p|--prompt)
+        require_option_value "$1" "$#"
+        CLI_PROMPT="$2"
+        shift 2
+        ;;
+      -f|--file)
+        require_option_value "$1" "$#"
+        REF_FILES+=("$2")
+        shift 2
+        ;;
       -v|--var)
+        require_option_value "$1" "$#"
         key="${2%%=*}"
         val="${2#*=}"
         VARS["$key"]="$val"
@@ -132,6 +218,7 @@ parse_args() {
         shift 2
         ;;
       -D|--detail)
+        require_option_value "$1" "$#"
         case "$2" in
           brief|standard|detailed) DETAIL="$2" ;;
           *) echo "[run-agent] WARNING: Invalid detail level '$2', defaulting to 'standard'" >&2; DETAIL="standard" ;;
@@ -139,7 +226,11 @@ parse_args() {
         shift 2
         ;;
       --dry-run) DRY_RUN=true; shift ;;
-      -C|--cd)      WORK_DIR="$2"; shift 2 ;;
+      -C|--cd)
+        require_option_value "$1" "$#"
+        WORK_DIR="$2"
+        shift 2
+        ;;
       -h|--help)    usage ;;
       *)
         echo "ERROR: Unknown argument: $1" >&2

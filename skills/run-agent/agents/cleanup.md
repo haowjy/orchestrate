@@ -3,7 +3,9 @@ name: cleanup
 description: Cleanup agent — implements a specific fix from review findings
 model: gpt-5.3-codex
 tools: Read,Edit,Write,Bash,Glob,Grep
-skills: []
+skills:
+  - smoke-test
+  - scratchpad
 ---
 
 You are a cleanup agent. Read and implement the cleanup slice at {{CLEANUP_FILE}}.

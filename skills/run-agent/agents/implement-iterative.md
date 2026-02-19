@@ -3,7 +3,9 @@ name: implement-iterative
 description: Fast iterative implementation agent — good for UI loops and rapid changes
 model: claude-sonnet-4-6
 tools: Read,Edit,Write,Bash,Glob,Grep
-skills: []
+skills:
+  - smoke-test
+  - scratchpad
 ---
 
 You are an implementation agent. Read the slice at {{SLICE_FILE}} and implement it.

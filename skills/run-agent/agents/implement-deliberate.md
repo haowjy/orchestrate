@@ -3,7 +3,9 @@ name: implement-deliberate
 description: Deliberate implementation agent — deep reasoning for complex changes
 model: claude-opus-4-6
 tools: Read,Edit,Write,Bash,Glob,Grep
-skills: []
+skills:
+  - smoke-test
+  - scratchpad
 ---
 
 You are an implementation agent. Read the slice at {{SLICE_FILE}} and implement it.

@@ -36,7 +36,7 @@ Categories:
 
 ### Step 4: Create Subtasks
 
-For each issue found, create a cleanup file in `{{SLICES_DIR}}/cleanup-NNN.md` (if `{{SLICES_DIR}}` is available) or `$SCRATCHPAD_ROOT/scratch/review/cleanup-NNN.md` (for interactive use), describing:
+For each issue found, create a cleanup file in `{{SLICES_DIR}}/cleanup-NNN.md` (if `{{SLICES_DIR}}` is available) or `${ORCHESTRATE_RUNS_DIR:-.runs}/project/scratch/review/cleanup-NNN.md` (for interactive use), describing:
 - The category (from Step 3)
 - The file and location
 - What's wrong and why

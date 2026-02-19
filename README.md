@@ -123,7 +123,11 @@ orchestrate/
 │   ├── review/              # Code review skill + rules
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── model-guidance/      # Model selection guidance
+│   ├── model-guidance/      # Model selection guidance
+│   │   └── SKILL.md
+│   ├── smoke-test/          # Smoke test conventions
+│   │   └── SKILL.md
+│   └── scratchpad/          # Scratch notes conventions
 │       └── SKILL.md
 ├── README.md
 └── LICENSE

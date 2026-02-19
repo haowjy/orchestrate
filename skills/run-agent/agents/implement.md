@@ -3,7 +3,9 @@ name: implement
 description: Implementation agent — reads slice file and implements it
 model: gpt-5.3-codex
 tools: Read,Edit,Write,Bash,Glob,Grep
-skills: []
+skills:
+  - smoke-test
+  - scratchpad
 ---
 
 You are an implementation agent. Read the slice at {{SLICE_FILE}} and implement it.

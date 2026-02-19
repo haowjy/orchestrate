@@ -5,3 +5,7 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Dev/install artifacts
+.agents/
+.claude/skills/

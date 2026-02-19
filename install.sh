@@ -115,16 +115,16 @@ link_skills() {
       if [[ -L "$dest" ]]; then
         existing="$(readlink "$dest")"
         if [[ "$existing" == "$rel_path" ]]; then
-          ((skipped++)); continue
+          ((skipped++)) || true; continue
         fi
         rm "$dest"
       elif [[ -e "$dest" ]]; then
         echo "  skip $dest (exists and is not a symlink)"
-        ((skipped++)); continue
+        ((skipped++)) || true; continue
       fi
 
       ln -s "$rel_path" "$dest"
-      ((created++))
+      ((created++)) || true
     else
       # Copy mode
       if [[ -d "$dest" && ! -L "$dest" ]]; then
@@ -135,7 +135,7 @@ link_skills() {
       fi
 
       cp -r "$skill_path" "$dest"
-      ((created++))
+      ((created++)) || true
     fi
   done
 

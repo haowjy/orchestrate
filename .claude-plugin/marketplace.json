@@ -1,0 +1,9 @@
+{
+  "name": "orchestrate-marketplace",
+  "owner": { "name": "Jimmy Yao" },
+  "plugins": [{
+    "name": "orchestrate",
+    "source": ".",
+    "description": "Multi-agent orchestrator for Claude Code"
+  }]
+}

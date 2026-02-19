@@ -1,0 +1,8 @@
+{
+  "name": "orchestrate",
+  "description": "Multi-agent orchestrator — supervisor loop that launches agents to implement plans",
+  "version": "1.0.0",
+  "author": { "name": "Jimmy Yao" },
+  "license": "MIT",
+  "keywords": ["orchestrator", "agents", "multi-agent", "automation"]
+}

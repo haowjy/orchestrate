@@ -1,0 +1,7 @@
+# Runtime data — never committed
+.runs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

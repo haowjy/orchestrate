@@ -35,11 +35,61 @@ The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it
 
 ## Install
 
-Use each CLI's native skill/plugin installer:
+### Option A: Native harness installers (preferred)
 
-- Claude Code: `/plugin marketplace add jimmyyao/orchestrate`
-- Codex: install from this GitHub repo via Codex's built-in skills flow
-- OpenCode: install from this GitHub repo via OpenCode's built-in skills flow
+**Claude Code** (plugin marketplace — recommend project scope):
+```bash
+/plugin marketplace add jimmyyao/orchestrate
+/plugin install orchestrate@jimmyyao-orchestrate --scope project
+```
+`--scope project` installs into `.claude/settings.json` so all collaborators get the plugin automatically. Use `--scope local` for personal-only.
+
+**Codex** (built-in skill installer):
+```
+$skill-installer install https://github.com/jimmyyao/orchestrate
+```
+Installs to `~/.codex/skills/orchestrate`. Requires `codex --enable skills` feature flag.
+
+**OpenCode** — no native skill installer. Use the per-repo approach below.
+
+### Option B: Per-repo install (universal, works with all CLIs)
+
+```bash
+git submodule add https://github.com/jimmyyao/orchestrate .agents/skills/orchestrate
+cd .agents/skills
+for skill in orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
+cd -
+echo '.runs/' >> .gitignore
+```
+
+Result:
+```
+.agents/skills/
+├── orchestrate/          # git submodule
+├── run-agent -> orchestrate/skills/run-agent
+├── review -> orchestrate/skills/review
+├── research -> orchestrate/skills/research
+└── ...                   # other skill symlinks
+```
+
+All three CLIs discover skills from `.agents/skills/` in the repo root.
+
+### Updating
+
+```bash
+git submodule update --remote .agents/skills/orchestrate
+```
+
+### Customizing agents per-repo
+
+Copy an agent out of the submodule to override it locally:
+
+```bash
+cp .agents/skills/orchestrate/skills/run-agent/agents/implement.md \
+   .agents/skills/run-agent/agents/implement.md
+```
+
+The local copy takes precedence (see [Agent lookup order](#custom-agents)).
 
 ## Getting Started
 

@@ -27,7 +27,80 @@ The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it
 
 ## Install
 
-### Option A: Native harness installers (preferred)
+### Quick start
+
+Paste this into any LLM-powered coding CLI (Claude Code, Codex, OpenCode):
+
+```
+Fetch and follow instructions from https://raw.githubusercontent.com/haowjy/orchestrate/main/INSTALL.md
+```
+
+### Manual install
+
+**1. Add orchestrate**
+
+As a submodule:
+```bash
+git submodule add https://github.com/haowjy/orchestrate .agents/skills/orchestrate
+```
+
+Or as a clone:
+```bash
+mkdir -p .agents/skills
+git clone https://github.com/haowjy/orchestrate .agents/skills/orchestrate
+echo '.agents/skills/orchestrate/' >> .gitignore   # keep the clone out of parent repo
+```
+
+**2. Create skill symlinks**
+
+```bash
+cd .agents/skills
+for skill in orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
+cd -
+
+mkdir -p .claude/skills && cd .claude/skills
+for skill in ../../.agents/skills/orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
+cd -
+```
+
+On Windows (or if symlinks aren't available), copy instead:
+```bash
+for skill in .agents/skills/orchestrate/skills/*/; do
+  cp -r "$skill" ".agents/skills/$(basename "$skill")"
+  cp -r "$skill" ".claude/skills/$(basename "$skill")"
+done
+```
+
+**3. Set up .runs/ gitignore**
+
+```bash
+mkdir -p .runs
+printf '*\n!.gitignore\n' > .runs/.gitignore
+```
+
+**4. Verify**
+
+```bash
+ls -la .agents/skills/
+ls -la .claude/skills/
+```
+
+Result:
+```
+.agents/skills/
+├── orchestrate/          # submodule or clone
+├── run-agent -> orchestrate/skills/run-agent
+├── review -> orchestrate/skills/review
+├── research -> orchestrate/skills/research
+└── ...                   # other skill symlinks
+
+.claude/skills/
+├── run-agent -> ../../.agents/skills/orchestrate/skills/run-agent
+├── review -> ../../.agents/skills/orchestrate/skills/review
+└── ...
+```
+
+### Native harness installers
 
 **Claude Code** (plugin marketplace — recommend project scope):
 ```bash
@@ -42,35 +115,21 @@ $skill-installer install https://github.com/haowjy/orchestrate
 ```
 Installs to `~/.codex/skills/orchestrate`. Requires `codex --enable skills` feature flag.
 
-**OpenCode** — no native skill installer. Use the per-repo approach below.
-
-### Option B: Per-repo install (universal, works with all CLIs)
-
-```bash
-git submodule add https://github.com/haowjy/orchestrate .agents/skills/orchestrate
-cd .agents/skills
-for skill in orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
-cd -
-echo '.runs/' >> .gitignore
-```
-
-Result:
-```
-.agents/skills/
-├── orchestrate/          # git submodule
-├── run-agent -> orchestrate/skills/run-agent
-├── review -> orchestrate/skills/review
-├── research -> orchestrate/skills/research
-└── ...                   # other skill symlinks
-```
-
-All three CLIs discover skills from `.agents/skills/` in the repo root.
+**OpenCode** — no native skill installer. Use the per-repo approach above.
 
 ### Updating
 
+If installed as submodule:
 ```bash
 git submodule update --remote .agents/skills/orchestrate
 ```
+
+If installed as clone:
+```bash
+cd .agents/skills/orchestrate && git pull && cd -
+```
+
+Re-run `install.sh` after updating if new skills were added (or re-run the copy commands if you used `--link copy`).
 
 ### Customizing agents per-repo
 

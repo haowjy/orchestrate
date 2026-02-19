@@ -2,7 +2,7 @@
 # install.sh — post-clone/submodule setup for orchestrate
 #
 # Assumes orchestrate is already at .agents/skills/orchestrate (via clone or submodule).
-# Creates per-skill links (symlink or copy) and ensures .runs/ is gitignored.
+# Creates per-skill links (symlink or copy) into .agents/skills/ and .claude/skills/.
 #
 # Usage:
 #   bash .agents/skills/orchestrate/install.sh [OPTIONS]
@@ -145,21 +145,6 @@ link_skills() {
 echo "Installing skills (${LINK})..."
 link_skills "$AGENTS_SKILLS"
 link_skills "$CLAUDE_SKILLS"
-
-# --- Ensure .runs/.gitignore ---
-
-RUNS_DIR="$PROJECT_ROOT/.runs"
-RUNS_GITIGNORE="$RUNS_DIR/.gitignore"
-
-mkdir -p "$RUNS_DIR"
-if [[ ! -f "$RUNS_GITIGNORE" ]]; then
-  printf '*\n!.gitignore\n' > "$RUNS_GITIGNORE"
-  echo ""
-  echo "Created $RUNS_GITIGNORE"
-else
-  echo ""
-  echo ".runs/.gitignore already exists"
-fi
 
 # --- Clone method: add orchestrate dir to .gitignore ---
 

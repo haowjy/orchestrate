@@ -71,14 +71,7 @@ for skill in .agents/skills/orchestrate/skills/*/; do
 done
 ```
 
-**3. Set up .runs/ gitignore**
-
-```bash
-mkdir -p .runs
-printf '*\n!.gitignore\n' > .runs/.gitignore
-```
-
-**4. Verify**
+**3. Verify**
 
 ```bash
 ls -la .agents/skills/

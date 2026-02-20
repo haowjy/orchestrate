@@ -1,11 +1,6 @@
 # Runtime data — never committed
-.runs/
 *.log
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Dev/install artifacts
-.agents/
-.claude/skills/

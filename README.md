@@ -1,29 +1,11 @@
 # Orchestrate
 
-Stop satisficing with one CLI. Use Claude Code, Codex, and OpenCode together — each doing what it's best at.
+Multi-agent toolkit for Claude Code, Codex, and OpenCode.
 
-Orchestrate is a multi-agent supervisor that routes specialized agents across CLI harnesses. Codex writes the code, Opus reviews it, Haiku commits it. You write a plan, it handles the rest.
-
-It is built from:
-- `skills/orchestrate/` — supervisor loop logic
-- `skills/run-agent/` — execution engine (`run-agent.sh`) + agent definitions
-- Native CLI install mechanisms (plugin/skills installers per harness)
-
-## Why
-
-### `run-agent.sh` — one wrapper, every CLI
-
-Agents are just markdown files with a model name in YAML frontmatter. `run-agent.sh` inspects the model string and routes to the right CLI — Claude Code, Codex, or OpenCode — normalizing prompt composition, tool allowlists, and execution along the way.
-
-Each CLI has strengths: Codex for exhaustive code generation, Claude Opus for thoughtful review, Sonnet for fast iteration. You shouldn't have to care about the plumbing differences between them — different tool-control surfaces, different effort flags, different JSON output formats. `run-agent.sh` handles all of it so agents are portable across harnesses.
-
-### LLM-controlled agent loops
-
-Most multi-agent setups are fixed pipelines: step A, then B, then C. Orchestrate is closer to [aider's architect mode](https://aider.chat/docs/usage/modes.html) or [Ralph](https://github.com/snarktank/ralph)-style bash loops, but the supervisor is an LLM, not a script.
-
-The supervisor reads your plan, decides what agent to run next, reads the report back, and adapts — choosing which agent variant to use, whether to re-review, when to escalate from `implement` to `implement-deliberate`. It can skip research if the plan is clear, run parallel reviewers for risky slices, or switch implementation strategy mid-plan.
-
-The structured loop (plan-slice, implement, review, fix/commit, repeat) gives it a framework, but the LLM makes the judgment calls within it. Unlike fixed pipelines or single architect/editor pairs, the supervisor can switch agent variants per slice, skip steps, retry, or escalate — adapting the workflow as it goes.
+- **`run-agent.sh`** — Script wrapper that routes agents to the right CLI based on model name. Normalizes prompt composition, tool allowlists, and output across Claude Code, Codex, and OpenCode.
+- **Skills** — Composable methodology files (review, research, planning, etc.) that get loaded into agent prompts. The `orchestrate` skill composes them into a supervisor loop.
+- **Agents** — 13 curated agent definitions for research, implementation, review, and utility tasks. Each specifies a model, tools, skills, and prompt. User-extensible.
+- **Logging** — Every agent run captures input prompt, raw output, human-readable report, files touched, and execution params. Organized by plan/slice scope under `.runs/`.
 
 ## Install
 
@@ -134,7 +116,7 @@ vi .agents/skills/run-agent/agents/review-security.md
 
 Re-running `install.sh` after an update will overwrite shipped files but never delete your additions. If you need to customize a shipped agent, create a new one instead of editing it — edits to shipped files will be lost on re-install.
 
-## Getting Started
+## Quick Start
 
 1. Write a plan file (e.g., `_docs/my-plan.md`) describing what to build
 2. Run `/orchestrate:orchestrate _docs/my-plan.md`
@@ -164,69 +146,7 @@ You write a plan (markdown). The orchestrator reads it and autonomously loops th
 6. **Commit** — stages and commits with a clean message
 7. **Repeat** until the plan is done
 
-## Cross-Harness Architecture
-
-```mermaid
-flowchart TB
-    S[Supervisor LLM] -->|"chooses agent + params"| R["run-agent.sh"]
-    A["Agent Definitions\n(markdown + YAML frontmatter)"] -->|"model, tools, prompt"| R
-    R -->|"claude-*, opus*, sonnet*, haiku*"| CC[Claude Code]
-    R -->|"gpt-*, o1*, o3*, o4*, codex*"| CX[Codex]
-    R -->|"provider/model, opencode-*"| OC[OpenCode]
-```
-
-The skill structure works natively across all three CLIs:
-
-| CLI | Discovery | Install |
-|-----|-----------|---------|
-| **Claude Code** | `.claude-plugin/plugin.json` → `skills/` | Marketplace or `--plugin-dir` |
-| **Codex** | `.agents/skills/*/SKILL.md` (walks to git root) | Native Codex skills installer |
-| **OpenCode** | `.agents/skills/` + `.claude/skills/` (walks up) | Native OpenCode skills installer |
-
-Model routing is automatic — agent definitions specify a model name, and `run-agent.sh` routes to the correct CLI:
-
-| Model Pattern | CLI | Examples |
-|---------------|-----|----------|
-| `claude-*`, `opus*`, `sonnet*`, `haiku*` | `claude` | `claude-sonnet-4-6`, `opus` |
-| `gpt-*`, `o1*`, `o3*`, `o4*`, `codex*` | `codex` | `gpt-5.3-codex`, `o4-mini` |
-| `opencode-*`, `provider/model` | `opencode` | `opencode/kimi-k2.5-free`, `anthropic/claude-sonnet-4-6` |
-
-Override routing with `ORCHESTRATE_DEFAULT_CLI=opencode` to force all agents through a specific CLI.
-
-## Repository Structure
-
-```
-orchestrate/
-├── .claude-plugin/          # Plugin manifest
-│   ├── plugin.json
-│   └── marketplace.json
-├── skills/
-│   ├── orchestrate/         # Supervisor brain (loop logic only)
-│   │   ├── SKILL.md
-│   │   └── README.md
-│   ├── run-agent/           # Execution engine
-│   │   ├── SKILL.md
-│   │   ├── README.md
-│   │   ├── agents/          # All agent definitions
-│   │   └── scripts/         # run-agent.sh, lib/, utilities
-│   ├── research/            # Research methodology skill
-│   │   └── SKILL.md
-│   ├── plan-slice/          # Slice planning skill
-│   │   └── SKILL.md
-│   ├── review/              # Code review skill + rules
-│   │   ├── SKILL.md
-│   │   └── references/
-│   ├── model-guidance/      # Model selection guidance
-│   │   └── SKILL.md
-│   ├── smoke-test/          # Smoke test conventions
-│   │   └── SKILL.md
-│   └── scratchpad/          # Scratch notes conventions
-│       └── SKILL.md
-├── README.md
-└── LICENSE
-```
-
-## Agent Types
+## Agents
 
 ### Research
 
@@ -364,6 +284,54 @@ Add rules to `skills/review/references/` (or `.agents/skills/review/references/`
 - `<directory>.md` — loaded when reviewing files under that top-level directory
 
 The review skill also reads `CLAUDE.md`/`AGENTS.md` from the project root for project-specific conventions.
+
+## Cross-Harness Architecture
+
+```mermaid
+flowchart TB
+    S[Supervisor LLM] -->|"chooses agent + params"| R["run-agent.sh"]
+    A["Agent Definitions\n(markdown + YAML frontmatter)"] -->|"model, tools, prompt"| R
+    R -->|"claude-*, opus*, sonnet*, haiku*"| CC[Claude Code]
+    R -->|"gpt-*, o1*, o3*, o4*, codex*"| CX[Codex]
+    R -->|"provider/model, opencode-*"| OC[OpenCode]
+```
+
+The skill structure works natively across all three CLIs:
+
+| CLI | Discovery | Install |
+|-----|-----------|---------|
+| **Claude Code** | `.claude-plugin/plugin.json` → `skills/` | Marketplace or `--plugin-dir` |
+| **Codex** | `.agents/skills/*/SKILL.md` (walks to git root) | Native Codex skills installer |
+| **OpenCode** | `.agents/skills/` + `.claude/skills/` (walks up) | Native OpenCode skills installer |
+
+Model routing is automatic — agent definitions specify a model name, and `run-agent.sh` routes to the correct CLI:
+
+| Model Pattern | CLI | Examples |
+|---------------|-----|----------|
+| `claude-*`, `opus*`, `sonnet*`, `haiku*` | `claude` | `claude-sonnet-4-6`, `opus` |
+| `gpt-*`, `o1*`, `o3*`, `o4*`, `codex*` | `codex` | `gpt-5.3-codex`, `o4-mini` |
+| `opencode-*`, `provider/model` | `opencode` | `opencode/kimi-k2.5-free`, `anthropic/claude-sonnet-4-6` |
+
+Override routing with `ORCHESTRATE_DEFAULT_CLI=opencode` to force all agents through a specific CLI.
+
+## Logging
+
+Every agent run is logged under `.runs/`:
+
+```
+.runs/
+├── project/logs/agent-runs/     # ad-hoc runs
+└── plans/{plan-name}/
+    ├── slices/{slice}/
+    │   └── logs/agent-runs/{agent}/
+    │       ├── input.md          # composed prompt
+    │       ├── output.json       # raw CLI output
+    │       ├── report.md         # agent's summary
+    │       ├── params.json       # execution metadata
+    │       └── files-touched.txt # extracted file list
+    ├── handoffs/                 # progress snapshots
+    └── scratch/                  # shared notes
+```
 
 ## Execution Mode and Safety
 

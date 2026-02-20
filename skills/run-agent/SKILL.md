@@ -67,6 +67,12 @@ The `opencode-` prefix is stripped before passing to the CLI. The `provider/mode
 
 Tool names in agent definitions are normalized for Claude's `--allowedTools` casing (e.g., `read` -> `Read`, `websearch` -> `WebSearch`). Codex and OpenCode currently do not expose tool allowlist flags in `exec/run`.
 
+## Available Agents
+
+`cleanup`, `commit`, `implement`, `implement-deliberate`, `implement-iterative`, `plan-slice`, `research-claude`, `research-codex`, `research-kimi`, `review`, `review-adversarial`, `review-quick`, `review-thorough`
+
+See the `model-guidance` skill for detailed descriptions, model assignments, and selection guidance.
+
 ## Agent Definition Format
 
 Agent definitions live in `agents/*.md` — markdown with YAML frontmatter:

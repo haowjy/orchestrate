@@ -41,31 +41,31 @@ Fetch and follow instructions from https://raw.githubusercontent.com/haowjy/orch
 
 As a submodule:
 ```bash
-git submodule add https://github.com/haowjy/orchestrate .agents/skills/orchestrate
+git submodule add https://github.com/haowjy/orchestrate .agents/.orchestrate
 ```
 
 Or as a clone:
 ```bash
-mkdir -p .agents/skills
-git clone https://github.com/haowjy/orchestrate .agents/skills/orchestrate
-echo '.agents/skills/orchestrate/' >> .gitignore   # keep the clone out of parent repo
+mkdir -p .agents
+git clone https://github.com/haowjy/orchestrate .agents/.orchestrate
+echo '.agents/.orchestrate/' >> .gitignore   # keep the clone out of parent repo
 ```
 
 **2. Create skill symlinks**
 
 ```bash
 cd .agents/skills
-for skill in orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
+for skill in ../.orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
 cd -
 
 mkdir -p .claude/skills && cd .claude/skills
-for skill in ../../.agents/skills/orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
+for skill in ../../.agents/.orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
 cd -
 ```
 
 On Windows (or if symlinks aren't available), copy instead:
 ```bash
-for skill in .agents/skills/orchestrate/skills/*/; do
+for skill in .agents/.orchestrate/skills/*/; do
   cp -r "$skill" ".agents/skills/$(basename "$skill")"
   cp -r "$skill" ".claude/skills/$(basename "$skill")"
 done
@@ -80,16 +80,19 @@ ls -la .claude/skills/
 
 Result:
 ```
-.agents/skills/
-├── orchestrate/          # submodule or clone
-├── run-agent -> orchestrate/skills/run-agent
-├── review -> orchestrate/skills/review
-├── research -> orchestrate/skills/research
-└── ...                   # other skill symlinks
+.agents/
+├── .orchestrate/         # submodule or clone (hidden)
+└── skills/
+    ├── orchestrate -> ../.orchestrate/skills/orchestrate
+    ├── run-agent -> ../.orchestrate/skills/run-agent
+    ├── review -> ../.orchestrate/skills/review
+    ├── research -> ../.orchestrate/skills/research
+    └── ...               # other skill symlinks
 
 .claude/skills/
-├── run-agent -> ../../.agents/skills/orchestrate/skills/run-agent
-├── review -> ../../.agents/skills/orchestrate/skills/review
+├── orchestrate -> ../../.agents/.orchestrate/skills/orchestrate
+├── run-agent -> ../../.agents/.orchestrate/skills/run-agent
+├── review -> ../../.agents/.orchestrate/skills/review
 └── ...
 ```
 
@@ -114,12 +117,12 @@ Installs to `~/.codex/skills/orchestrate`. Requires `codex --enable skills` feat
 
 If installed as submodule:
 ```bash
-git submodule update --remote .agents/skills/orchestrate
+git submodule update --remote .agents/.orchestrate
 ```
 
 If installed as clone:
 ```bash
-cd .agents/skills/orchestrate && git pull && cd -
+cd .agents/.orchestrate && git pull && cd -
 ```
 
 Re-run `install.sh` after updating if new skills were added (or re-run the copy commands if you used `--link copy`).
@@ -129,7 +132,7 @@ Re-run `install.sh` after updating if new skills were added (or re-run the copy 
 Copy an agent out of the submodule to override it locally:
 
 ```bash
-cp .agents/skills/orchestrate/skills/run-agent/agents/implement.md \
+cp .agents/.orchestrate/skills/run-agent/agents/implement.md \
    .agents/skills/run-agent/agents/implement.md
 ```
 

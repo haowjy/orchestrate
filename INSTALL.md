@@ -19,14 +19,14 @@ Ask the user two questions:
 ### If submodule:
 
 ```bash
-git submodule add https://github.com/haowjy/orchestrate .agents/skills/orchestrate
+git submodule add https://github.com/haowjy/orchestrate .agents/.orchestrate
 ```
 
 ### If clone:
 
 ```bash
-mkdir -p .agents/skills
-git clone https://github.com/haowjy/orchestrate .agents/skills/orchestrate
+mkdir -p .agents
+git clone https://github.com/haowjy/orchestrate .agents/.orchestrate
 ```
 
 ## Step 2: Run setup
@@ -34,12 +34,12 @@ git clone https://github.com/haowjy/orchestrate .agents/skills/orchestrate
 Compose the `install.sh` command based on the user's answers:
 
 ```bash
-bash .agents/skills/orchestrate/install.sh --method <submodule|clone> --link <symlink|copy>
+bash .agents/.orchestrate/install.sh --method <submodule|clone> --link <symlink|copy>
 ```
 
 Examples:
-- Submodule + symlink (most common): `bash .agents/skills/orchestrate/install.sh --method submodule --link symlink`
-- Clone + copy (Windows): `bash .agents/skills/orchestrate/install.sh --method clone --link copy`
+- Submodule + symlink (most common): `bash .agents/.orchestrate/install.sh --method submodule --link symlink`
+- Clone + copy (Windows): `bash .agents/.orchestrate/install.sh --method clone --link copy`
 
 ## Step 3: Verify
 
@@ -55,19 +55,19 @@ Both directories should contain entries for each skill (symlinks or directories 
 ### If submodule:
 
 ```bash
-git submodule update --remote .agents/skills/orchestrate
+git submodule update --remote .agents/.orchestrate
 ```
 
 ### If clone:
 
 ```bash
-cd .agents/skills/orchestrate && git pull && cd -
+cd .agents/.orchestrate && git pull && cd -
 ```
 
 If `--link copy` was used, re-run install to refresh copies:
 
 ```bash
-bash .agents/skills/orchestrate/install.sh --method <submodule|clone> --link copy
+bash .agents/.orchestrate/install.sh --method <submodule|clone> --link copy
 ```
 
 ## Uninstalling
@@ -75,15 +75,15 @@ bash .agents/skills/orchestrate/install.sh --method <submodule|clone> --link cop
 ### If submodule:
 
 ```bash
-git submodule deinit -f .agents/skills/orchestrate
-git rm -f .agents/skills/orchestrate
-rm -rf .git/modules/.agents/skills/orchestrate
+git submodule deinit -f .agents/.orchestrate
+git rm -f .agents/.orchestrate
+rm -rf .git/modules/.agents/.orchestrate
 ```
 
 ### If clone:
 
 ```bash
-rm -rf .agents/skills/orchestrate
+rm -rf .agents/.orchestrate
 ```
 
 Then remove skill links from both directories:
@@ -94,7 +94,7 @@ find .agents/skills -maxdepth 1 -type l -delete
 find .claude/skills -maxdepth 1 -type l -delete
 
 # Or if --link copy was used, remove the copied skill directories
-for skill in .agents/skills/orchestrate/skills/*/; do
+for skill in .agents/.orchestrate/skills/*/; do
   name="$(basename "$skill")"
   rm -rf ".agents/skills/$name" ".claude/skills/$name"
 done

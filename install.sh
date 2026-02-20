@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # install.sh — post-clone/submodule setup for orchestrate
 #
-# Assumes orchestrate is already at .agents/skills/orchestrate (via clone or submodule).
+# Assumes orchestrate is already at .agents/.orchestrate (via clone or submodule).
 # Creates per-skill links (symlink or copy) into .agents/skills/ and .claude/skills/.
 #
 # Usage:
-#   bash .agents/skills/orchestrate/install.sh [OPTIONS]
+#   bash .agents/.orchestrate/install.sh [OPTIONS]
 #
 # Options:
 #   --method submodule|clone   How orchestrate was added (default: auto-detect)
-#                              clone: adds .agents/skills/orchestrate to .gitignore
+#                              clone: adds .agents/.orchestrate to .gitignore
 #   --link   symlink|copy      Link strategy (default: symlink)
 #                              copy: use on Windows or when symlinks aren't available
 #
@@ -70,7 +70,7 @@ find_project_root() {
 
 PROJECT_ROOT="$(find_project_root)" || {
   echo "Error: Could not find parent project git root."
-  echo "Make sure orchestrate is inside a git repository at .agents/skills/orchestrate"
+  echo "Make sure orchestrate is inside a git repository at .agents/.orchestrate"
   exit 1
 }
 
@@ -106,11 +106,6 @@ link_skills() {
     [[ -d "$skill_path" ]] || continue
     skill_name="$(basename "$skill_path")"
     dest="$target_dir/$skill_name"
-
-    # Skip when destination is the source itself (e.g. .agents/skills/orchestrate)
-    if [[ "$(realpath "$skill_path")" == "$(realpath "$dest" 2>/dev/null)" ]]; then
-      ((skipped++)) || true; continue
-    fi
 
     if [[ "$LINK" == "symlink" ]]; then
       # Compute relative path from target_dir to skill_path
@@ -165,7 +160,7 @@ fi
 # --- Clone method: add orchestrate dir to .gitignore ---
 
 if [[ "$METHOD" == "clone" ]]; then
-  ENTRY=".agents/skills/orchestrate/"
+  ENTRY=".agents/.orchestrate/"
   if grep -qxF "$ENTRY" "$GITIGNORE"; then
     echo ".gitignore: '$ENTRY' already present"
   else

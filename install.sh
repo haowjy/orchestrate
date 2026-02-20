@@ -107,6 +107,11 @@ link_skills() {
     skill_name="$(basename "$skill_path")"
     dest="$target_dir/$skill_name"
 
+    # Skip when destination is the source itself (e.g. .agents/skills/orchestrate)
+    if [[ "$(realpath "$skill_path")" == "$(realpath "$dest" 2>/dev/null)" ]]; then
+      ((skipped++)) || true; continue
+    fi
+
     if [[ "$LINK" == "symlink" ]]; then
       # Compute relative path from target_dir to skill_path
       rel_path="$(python3 -c "import os.path; print(os.path.relpath('$skill_path', '$target_dir'))" 2>/dev/null)" \
@@ -146,12 +151,22 @@ echo "Installing skills (${LINK})..."
 link_skills "$AGENTS_SKILLS"
 link_skills "$CLAUDE_SKILLS"
 
+# --- Ensure .runs/ is ignored in the parent repo ---
+
+GITIGNORE="$PROJECT_ROOT/.gitignore"
+RUNS_ENTRY=".runs/"
+if [[ -f "$GITIGNORE" ]] && grep -qxF "$RUNS_ENTRY" "$GITIGNORE"; then
+  echo ".gitignore: '$RUNS_ENTRY' already present"
+else
+  echo "$RUNS_ENTRY" >> "$GITIGNORE"
+  echo ".gitignore: added '$RUNS_ENTRY'"
+fi
+
 # --- Clone method: add orchestrate dir to .gitignore ---
 
 if [[ "$METHOD" == "clone" ]]; then
-  GITIGNORE="$PROJECT_ROOT/.gitignore"
   ENTRY=".agents/skills/orchestrate/"
-  if [[ -f "$GITIGNORE" ]] && grep -qxF "$ENTRY" "$GITIGNORE"; then
+  if grep -qxF "$ENTRY" "$GITIGNORE"; then
     echo ".gitignore: '$ENTRY' already present"
   else
     echo "$ENTRY" >> "$GITIGNORE"

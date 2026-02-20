@@ -23,6 +23,8 @@ Write clean, correct code following the project conventions discovered from the 
 
 Look for build/test/lint commands in the project's instruction files (`CLAUDE.md` or `AGENTS.md`). Run them for every stack affected by the slice. Fix any build/lint/test failures before marking complete.
 
+**Write smoke tests** in `scratch/code/smoke/` to verify your changes work. Smoke tests are any ad-hoc code — not just curl. Write quick vitest/jest tests to verify logic (guards, state machines, edge cases), curl scripts for API endpoints, or integration probes. See the `smoke-test` skill for conventions.
+
 ## Completion
 
 When done, append a `## Completed` section to {{SLICE_FILE}} describing:

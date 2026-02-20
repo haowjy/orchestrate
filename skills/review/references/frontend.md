@@ -12,7 +12,12 @@ Common patterns LLMs get wrong in this codebase. Check every frontend diff again
 - Only show a loading indicator when there is genuinely no data and the wait will be noticeable
 - An empty editor is better than a loading spinner for an empty document
 
-`hasData ? <Content /> : isInitialLoad ? <Skeleton /> : <EmptyState />`
+The full pattern distinguishes three states:
+- **Has cached data + fetching**: show cached content, refresh silently in the background (`isFetching: true`, no skeleton)
+- **No data + fetching**: show skeleton (`status: "loading"`)
+- **No data + not fetching**: show empty state
+
+`hasData ? <Content /> : isLoading ? <Skeleton /> : <EmptyState />`
 
 ## Async Operations Must Be Cancellation-Safe
 
@@ -66,9 +71,57 @@ So when building PATCH request bodies: omit the field entirely to "don't change"
 **The pattern**:
 - `useStore((s) => s.field)` or `useShallow` for object picks
 - Never `const store = useStore()` — causes re-renders on any state change
+- For cross-store derived state, prefer **convenience hooks** exported from the store file (e.g., `useCurrentThreadStream()` in `useStreamStore.ts`) over inline selectors — they centralize the derivation logic
 
 ## Guard Stale References Across Navigation
 
 **Why**: React state updates are asynchronous and Zustand stores are global singletons. When a user navigates from document A to document B, the store's `activeDocument` doesn't update atomically — there's a window where hooks for document B are running but `activeDocument` still holds A's data. Reading `.content` or `.extension` without checking `.id === documentId` silently produces wrong data. We've had bugs where the editor loaded with document A's extension (wrong syntax highlighting) and where saves wrote content to document A's ID instead of B's.
 
 **The pattern**: When hooks receive an entity ID (documentId, threadId), always verify that store state matches before using it: `if (activeDocument?.id !== documentId) return`.
+
+## CodeMirror: Compartments, Never Recreate the Editor
+
+**Why**: The `EditorView` is created once (empty dependency array). Recreating it destroys undo history, cursor position, scroll state, selection, and any in-flight Yjs sync. All dynamic changes — editability, theme, live preview mode — go through **Compartments**, CM6's mechanism for hot-swapping extensions without destroying the editor. Callbacks the editor uses (like `onChange`) are stored in `useRef` to prevent extension recreation when callback identity changes.
+
+**The pattern**:
+- `useEffect(() => { /* create EditorView */ }, [])` — empty deps, never recreate
+- `compartment.reconfigure(newExtension)` — to change behavior at runtime
+- Store callbacks in refs, not in the extension dependency chain
+- New keymaps need explicit `Prec` priority (`Prec.highest`, `Prec.high`) — default priority silently loses to existing bindings
+
+## fetchAPI Is the Single API Gateway
+
+**Why**: `fetchAPI<T>()` is the only way to call the backend. It injects auth tokens, converts response keys from `snake_case` to `camelCase`, handles 401 token refresh with a concurrent-refresh guard, retries transient GET failures, and maps errors to `AppError`. Bypassing it with raw `fetch()` loses all of this silently — auth breaks, types don't match DTOs, errors aren't caught.
+
+**The pattern**:
+- Always use `fetchAPI<T>()` from `core/lib/api.ts` — never raw `fetch()`
+- DTO types use `camelCase` (auto-converted from backend's `snake_case`)
+- Only GET requests auto-retry — POST/PATCH/DELETE never retry (would cause duplicate mutations)
+
+## Zustand: Module-Level Side Effects, Not Store State
+
+**Why**: AbortControllers, request counters, and timers must live at **module scope** (outside the store), not inside Zustand state. Zustand state should be serializable — putting an AbortController in it breaks persistence, devtools, and any middleware that inspects state. Using `useRef` instead ties the lifecycle to a component, but store actions outlive components.
+
+**The pattern**:
+- `let loadTreeRequestId = 0` at module top — monotonic counter for staleness guards
+- `let abortController: AbortController | null = null` at module top — shared across store actions
+- Inside the store action: `const thisRequest = ++loadTreeRequestId` → after await: `if (thisRequest !== loadTreeRequestId) return`
+- Never store AbortController/timers in Zustand state or `useRef`
+
+## TanStack Router: Store-Driven Loading, No Loaders
+
+**Why**: This codebase does NOT use TanStack Router's `loader` functions. Data loading happens in component effects that call Zustand store actions (with SWR caching). Route `beforeLoad` hooks are only used for auth guards (redirect to `/login`). Adding a loader would bypass the store cache and duplicate loading logic.
+
+**The pattern**:
+- No `loader` in route definitions — stores handle data fetching with SWR
+- `beforeLoad` is only for auth redirects, not data loading
+- Navigation always does two things: (1) direct state update via `useUIStore.getState()` for instant feedback, (2) URL `navigate()` for browser history. Both are needed — one alone is incomplete
+
+## React 19 Activity for Panel Visibility
+
+**Why**: Hidden panels use React 19's `<Activity>` component to pause effects while preserving state (scroll position, editor content, form inputs). This is NOT the same as conditional rendering (`{visible && <Panel />}`), which destroys and recreates all state. It's also not `display: none`, which hides visually but doesn't pause effects (timers, subscriptions keep running).
+
+**The pattern**:
+- `<Activity mode={visible ? "visible" : "hidden"}>` — pauses effects, preserves state
+- Never `{visible && <Component />}` for panels — destroys state on hide
+- Never `style={{ display: visible ? "block" : "none" }}` — doesn't pause effects

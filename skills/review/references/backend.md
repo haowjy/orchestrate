@@ -63,3 +63,13 @@ Use `optional.Optional[T]` for any PATCH request field where the user might want
 **Why**: Supabase routes connections through PgBouncer (port 6543) for connection pooling. PgBouncer's transaction mode doesn't support PostgreSQL's extended query protocol (prepared statements), because prepared statements are per-connection and PgBouncer reassigns connections between queries. If code uses the default query mode, queries silently fail or produce wrong results. The codebase auto-detects this and uses `QueryExecModeCacheDescribe` — but you need to be aware of it when writing raw queries or configuring new database connections.
 
 **The pattern**: See `internal/repository/postgres/connection.go` for the auto-detection logic.
+
+## WebSocket Auth: JWT as First Message
+
+**Why**: The WebSocket upgrade handshake doesn't reliably support custom headers across all browsers. This codebase authenticates WS connections by sending the raw JWT token as the **first message** after connection, with a 5-second read timeout. The auth middleware explicitly skips `/ws/projects/*` routes — WS auth is handled in-handler, not via middleware.
+
+**The pattern**:
+- Frontend sends raw JWT as the first WS message after `onopen`
+- Backend reads first message with a 5-second deadline, validates JWT, extracts user ID
+- Auth middleware (`middleware/auth.go`) skips WS routes — don't add WS paths to the middleware chain
+- Don't try to pass JWT as a query parameter or HTTP header during the upgrade

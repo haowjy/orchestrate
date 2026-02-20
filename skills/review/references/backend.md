@@ -15,9 +15,16 @@ If you see business logic in a handler or a handler calling a repository directl
 
 Services return domain errors (`ErrNotFound`, `ErrValidation`, `ErrForbidden`). Handlers map them to HTTP status codes. Services should never import `net/http` or know about status codes.
 
-## Empty String Is Valid
+## Null vs Empty Are Different Things
 
-Don't replace `""` with defaults unless the API contract requires it. A user intentionally clearing a field to `""` is different from omitting the field. Use pointer types or explicit flags to distinguish "omitted" from "intentionally empty."
+Go's type system makes this explicit — use it:
+- `*string` being `nil` = field was **omitted** (not provided, use default/no-op)
+- `*string` pointing to `""` = field was **intentionally cleared** (user wants empty)
+- `string` being `""` = could be either — ambiguous, avoid for optional fields
+
+Same for slices: `nil` slice = absent, `[]T{}` = present but empty.
+
+Don't collapse these. A user clearing their system prompt to `""` is not the same as never setting one. Use pointer types for optional/nullable fields in request structs so JSON `null` vs `""` vs omitted are distinguishable. Apply the same principle in database models — `sql.NullString` or `*string` for nullable columns.
 
 ## Wrap Errors With Context
 

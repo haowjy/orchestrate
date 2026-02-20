@@ -25,13 +25,21 @@ Common patterns LLMs get wrong in this codebase. Check every frontend diff again
 
 When merging async results into existing state, use functional updates (`set((current) => ...)`) — never merge against a pre-await snapshot, which drops concurrent updates (e.g., streaming deltas that arrived while a paginate was in flight).
 
-## Empty Is Valid Data
+## Empty, Null, and Undefined Are Three Different Things
 
-**Why**: A writer creates a new document — it has content `""`. That's a real document they're about to type in, not an error or missing state. If code checks `if (!content)` it treats that empty document as absent, triggering loading states, skipping saves, or dropping streaming deltas. Same for `0` (a valid word count) and `[]` (a thread with no turns yet). JavaScript's falsy coercion (`""`, `0`, `false`, `null`, `undefined` all falsy) is the root cause — the language doesn't distinguish "empty" from "absent" unless you're explicit about it.
+**Why**: JavaScript has no built-in way to distinguish these — and LLMs collapse them constantly. But they mean different things in this app:
+- `undefined` = field was **never set** (omitted from response, not loaded yet)
+- `null` = field was **explicitly cleared** (user set system prompt to null, document moved to root)
+- `""` = field has a **valid empty value** (new empty document, cleared text field)
+
+A writer creates a new document — it has content `""`. That's a real document they're about to type in, not missing state. If code checks `if (!content)` it treats that empty document as absent, triggering loading states, skipping saves, or dropping streaming deltas. JavaScript's falsy coercion (`""`, `0`, `false`, `null`, `undefined` all falsy) makes this easy to get wrong — the language doesn't distinguish "empty" from "absent" unless you're explicit.
+
+The backend uses `optional.Optional[T]` for tri-state PATCH semantics (omitted vs null vs value). The frontend must respect this — sending `null` means "clear the field", sending `undefined`/omitting means "don't change", and sending `""` means "set to empty string". These are different API calls with different results.
 
 **The pattern**:
 - Use `??` not `||` for defaults (`""` triggers `||` fallback, `??` only triggers on `null`/`undefined`)
-- Use `value == null` not `!value` for absence checks
+- Use `value == null` not `!value` for absence checks (`== null` catches both null and undefined)
+- Use `value !== undefined` when you need to distinguish null (clear) from undefined (omit)
 - An empty document should render an empty editor, not a "no content" state
 
 ## Use Shared UI Components

@@ -19,18 +19,32 @@ If you see business logic in a handler or a handler calling a repository directl
 
 **The pattern**: Services return domain errors. Handlers map them to HTTP status codes. Services should never import `net/http` or know about status codes.
 
-## Null vs Empty Are Different Things
+## Null vs Empty vs Omitted Are Three Different Things
 
-**Why**: A user clearing their system prompt to `""` means "I want no system prompt." A user who never set one has `null`. These are different user intents that produce different behavior — one is an explicit action, the other is a default. If the backend collapses both to the same value (e.g., replacing `""` with a default template), it silently overrides the user's explicit choice. Go's type system can represent this distinction precisely — use it.
+**Why**: Go's standard `encoding/json` has no way to distinguish "field was absent from JSON" from "field was `null`" — both result in a nil pointer. But for PATCH semantics (RFC 7396), these are three distinct user intents:
+- **Omitted**: "don't change this field"
+- **`null`**: "clear this field" (e.g., move document to root, clear system prompt)
+- **`""`**: "set this field to empty string" (valid value, different from clearing)
 
-**The pattern**:
-- `*string` being `nil` = field was **omitted** (not provided, use default/no-op)
-- `*string` pointing to `""` = field was **intentionally cleared** (user wants empty)
-- `string` being `""` = could be either — ambiguous, avoid for optional fields
+Collapsing these loses user intent. A user clearing their system prompt (`null`) is not the same as never setting one (omitted), and neither is the same as setting it to `""`.
 
-Same for slices: `nil` slice = absent, `[]T{}` = present but empty.
+**The pattern**: This codebase uses `optional.Optional[T]` (see `internal/optional/optional.go`) for tri-state PATCH fields:
 
-Use pointer types for optional/nullable fields in request structs so JSON `null` vs `""` vs omitted are distinguishable. Apply the same principle in database models — `sql.NullString` or `*string` for nullable columns.
+```go
+type Optional[T any] struct {
+    Present bool  // true = field was in JSON (even if null)
+    Value   *T    // nil = JSON null, non-nil = has value
+}
+```
+
+| JSON input | `Present` | `Value` | Meaning |
+|------------|-----------|---------|---------|
+| field absent | `false` | `nil` | Don't change |
+| `"field": null` | `true` | `nil` | Clear/set to NULL |
+| `"field": ""` | `true` | `&""` | Set to empty string |
+| `"field": "hello"` | `true` | `&"hello"` | Set to value |
+
+Use `optional.Optional[T]` for any PATCH request field where the user might want to clear a value. Don't use bare `*string` for PATCH fields — it can't distinguish omitted from null. See `handler/project.go`, `handler/document.go`, `handler/folder.go` for usage examples.
 
 ## Wrap Errors With Context
 

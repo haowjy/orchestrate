@@ -1,29 +1,32 @@
-# Backend Rules (Go + net/http + PostgreSQL)
+# Backend Patterns (Go + Clean Architecture)
 
-These rules apply to all code under `backend/`. Check every diff against them.
+Common patterns LLMs get wrong in this codebase. Check every backend diff against these.
 
-## Error Handling
+## Use the Service Layer
 
-1. **Domain errors over HTTP errors**: Business logic should return domain errors (`ErrNotFound`, `ErrValidation`). Handlers map domain errors to HTTP status codes — services should not know about HTTP.
-2. **Wrap errors with context**: Use `fmt.Errorf("operation: %w", err)` to add context. Don't return raw errors from called functions.
-3. **No silent error swallowing**: Every error must be handled — logged, returned, or explicitly documented as intentional best-effort.
+This codebase follows Clean Architecture. LLMs often shortcut it:
+- **Handlers** validate input and map HTTP ↔ domain. No business logic.
+- **Services** implement business logic. They call repositories, not the other way around.
+- **Repositories** do data access only. No business decisions.
 
-## Data Handling
+If you see business logic in a handler or a handler calling a repository directly, flag it.
 
-4. **Empty string is valid**: Don't replace `""` with default values unless the API contract explicitly states the field is required. Use pointer types or explicit flags to distinguish "omitted" from "intentionally empty."
-5. **Validate at boundaries**: Validate input in handlers (HTTP layer). Services trust validated input. Don't re-validate deep in the call chain.
+## Domain Errors, Not HTTP Errors
 
-## Architecture
+Services return domain errors (`ErrNotFound`, `ErrValidation`, `ErrForbidden`). Handlers map them to HTTP status codes. Services should never import `net/http` or know about status codes.
 
-6. **Clean Architecture boundaries**: `domain/` defines interfaces. `service/` implements business logic. `repository/` implements data access. `handler/` maps HTTP to domain. No cross-layer imports that skip levels.
-7. **Interface segregation**: Prefer small, focused interfaces (`Reader`, `Writer`) over large ones (`Repository` with 20 methods). Consumers should depend on the minimum interface they need.
+## Empty String Is Valid
 
-## Database
+Don't replace `""` with defaults unless the API contract requires it. A user intentionally clearing a field to `""` is different from omitting the field. Use pointer types or explicit flags to distinguish "omitted" from "intentionally empty."
 
-8. **Prepared statement compatibility**: Supabase PgBouncer (port 6543) doesn't support prepared statements. Use `QueryExecModeCacheDescribe` for pooled connections. See `internal/repository/postgres/connection.go`.
-9. **Transactions for multi-step mutations**: Operations that touch multiple tables must use transactions. Don't rely on sequential queries being atomic.
+## Wrap Errors With Context
 
-## API Conventions
+Use `fmt.Errorf("loading document %s: %w", id, err)` — not bare `return err`. Every layer should add context about what it was doing when the error occurred.
 
-10. **Consistent response shapes**: Follow existing `api.ts` patterns for response envelopes, pagination, and error shapes. Don't introduce new response formats.
-11. **AbortSignal support**: API handler functions that accept options should support `signal` for cancellation. Match the pattern in existing endpoints.
+## Validate at the Boundary
+
+Validate input once in the handler. Services trust validated input. Don't scatter validation checks deep in the call chain — it adds noise and creates inconsistency about which layer "owns" validation.
+
+## Database: Know the Pooler Limitation
+
+Supabase PgBouncer (port 6543) doesn't support prepared statements. Connection setup auto-detects this — but if writing raw queries, be aware that `QueryExecModeCacheDescribe` is in use. See `internal/repository/postgres/connection.go`.

@@ -107,12 +107,15 @@ copy_skills() {
     fi
 
     if [[ -d "$dest" ]]; then
-      # Skill dir exists — overwrite orchestrate-defined files, keep user additions
-      cp -r "$skill_path"/* "$dest"/ 2>/dev/null || true
+      # Skill dir exists — overwrite orchestrate-defined files, keep user additions.
+      # Exclude hidden dirs (runtime artifacts like .runs/) but include .gitignore.
+      rsync -a --exclude='.*/' "$skill_path"/ "$dest"/ 2>/dev/null || \
+        cp -r "$skill_path"/* "$dest"/ 2>/dev/null || true
       ((updated++)) || true
     else
-      # First install — copy entire skill directory
-      cp -r "$skill_path" "$dest"
+      # First install — copy entire skill directory (exclude runtime artifact dirs).
+      rsync -a --exclude='.*/' "$skill_path"/ "$dest" 2>/dev/null || \
+        cp -r "$skill_path" "$dest"
       ((copied++)) || true
     fi
   done
@@ -124,22 +127,13 @@ echo "Installing skills..."
 copy_skills "$AGENTS_SKILLS"
 copy_skills "$CLAUDE_SKILLS"
 
-# --- Ensure .runs/ is ignored in the parent repo ---
-
-GITIGNORE="$PROJECT_ROOT/.gitignore"
-RUNS_ENTRY=".runs/"
-if [[ -f "$GITIGNORE" ]] && grep -qxF "$RUNS_ENTRY" "$GITIGNORE"; then
-  echo ".gitignore: '$RUNS_ENTRY' already present"
-else
-  echo "$RUNS_ENTRY" >> "$GITIGNORE"
-  echo ".gitignore: added '$RUNS_ENTRY'"
-fi
-
 # --- Clone method: add orchestrate dir to .gitignore ---
+# Each skill's .gitignore (copied above) already ignores hidden runtime dirs.
 
 if [[ "$METHOD" == "clone" ]]; then
+  GITIGNORE="$PROJECT_ROOT/.gitignore"
   ENTRY=".agents/.orchestrate/"
-  if grep -qxF "$ENTRY" "$GITIGNORE"; then
+  if [[ -f "$GITIGNORE" ]] && grep -qxF "$ENTRY" "$GITIGNORE"; then
     echo ".gitignore: '$ENTRY' already present"
   else
     echo "$ENTRY" >> "$GITIGNORE"

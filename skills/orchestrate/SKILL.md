@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Flexible supervisor loop — launches agents via run-agent.sh to implement plans.
-allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/save-handoff.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(rm */.runs/*), Bash(cp *), Bash(ln *), Bash(date *)
+allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/save-handoff.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(rm */orchestrate/.session/*), Bash(rm */run-agent/.runs/*), Bash(cp *), Bash(ln *), Bash(date *)
 ---
 
 # Orchestrate — Supervisor Skill
@@ -41,40 +41,45 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 
 ## Plan Runtime Directory
 
-Use a scope-root hierarchy under `.runs/` so scratch, smoke, and logs are consistent at every level:
+Runtime artifacts are split between two directories — raw per-run artifacts in `run-agent/.runs/` and coordination state in `orchestrate/.session/`:
 
 ```
-.runs/
+{skills-dir}/run-agent/.runs/                    # raw per-run artifacts
 ├── project/
-│   ├── scratch/
-│   ├── scratch/code/smoke/
-│   └── logs/agent-runs/
+│   ├── logs/agent-runs/{agent}-{PID}/
+│   │   ├── params.json
+│   │   ├── input.md
+│   │   ├── output.json
+│   │   ├── report.md
+│   │   └── files-touched.txt
+│   └── scratch/code/smoke/
 └── plans/{plan-name}/
-    ├── scratch/
-    ├── scratch/code/smoke/
-    ├── logs/agent-runs/
+    └── slices/{slice-name}/
+        ├── logs/agent-runs/{agent}-{PID}/
+        └── scratch/code/smoke/
+
+{skills-dir}/orchestrate/.session/               # coordination state
+├── project/
+│   └── index.log
+└── plans/{plan-name}/
+    ├── index.log
     ├── handoffs/
     ├── commits/
-    ├── phases/{phase-name}/
-    │   ├── scratch/
-    │   ├── scratch/code/smoke/
-    │   ├── logs/agent-runs/
-    │   └── slices/{slice-name}/
-    │       ├── slice.md
-    │       ├── scratch/
-    │       ├── scratch/code/smoke/
-    │       └── logs/agent-runs/
-    └── slices/{slice-name}/       # If no phase
+    └── slices/{slice-name}/
+        └── index.log
 ```
 
 Use these terms:
-- `PLAN_ROOT`: `.runs/plans/{plan-name}`
-- `SLICE_ROOT`: `.runs/plans/{plan-name}/phases/{phase-name}/slices/{slice-name}` or `.runs/plans/{plan-name}/slices/{slice-name}`
-- `SCOPE_ROOT`: whichever level you are currently operating in (project, plan, phase, or slice)
+- `RUNS_DIR`: `{skills-dir}/run-agent/.runs/` — raw artifacts (logs, scratch)
+- `SESSION_DIR`: `{skills-dir}/orchestrate/.session/` — coordination state (index, handoffs, commits)
+- `RUNS_ROOT`: `$RUNS_DIR/plans/{plan-name}` — raw artifacts for a plan
+- `PLAN_ROOT`: `$SESSION_DIR/plans/{plan-name}` — coordination state for a plan
+- `SLICE_ROOT`: `$RUNS_DIR/plans/{plan-name}/slices/{slice-name}` — raw artifacts for a slice
+- `SCOPE_ROOT`: whichever level you are currently operating in (project, plan, or slice)
 
 ## How to Launch Agents
 
-Use `run-agent/scripts/run-agent.sh` for everything. Log directories are auto-derived from scope variables (`SLICE_FILE`, `SLICES_DIR`, etc.) — you don't need to set `ORCHESTRATE_LOG_DIR` unless overriding for parallel runs.
+Use `run-agent/scripts/run-agent.sh` for everything. Log directories are auto-derived from scope variables (`SLICE_FILE`, `SLICES_DIR`, etc.) with PID appended for parallel safety.
 
 Every run produces a `report.md` (written by the subagent) and prints it to stdout. Read the report to understand what the agent did — don't parse verbose logs. Use `-D brief` for quick checks or `-D detailed` for deep analysis (default: `standard`).
 
@@ -94,11 +99,9 @@ run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Rev
 # Override model on any agent
 run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
 
-# Parallel multi-variant review (ORCHESTRATE_LOG_DIR needed to separate logs)
-ORCHESTRATE_LOG_DIR=$SLICE_ROOT/logs/agent-runs/review-default \
-  run-agent/scripts/run-agent.sh review &
-ORCHESTRATE_LOG_DIR=$SLICE_ROOT/logs/agent-runs/review-opus \
-  run-agent/scripts/run-agent.sh review -m claude-opus-4-6 &
+# Parallel multi-variant review — PID-based log dirs keep them separate automatically
+run-agent/scripts/run-agent.sh review &
+run-agent/scripts/run-agent.sh review -m claude-opus-4-6 &
 wait
 ```
 
@@ -123,15 +126,12 @@ But you can deviate: skip review for trivial changes, run multiple reviewers in 
 If the plan doesn't exist yet or needs deeper context, launch research agents to explore the codebase and gather information before planning:
 
 ```bash
-# 3-way parallel research — different perspectives
-ORCHESTRATE_LOG_DIR=$PLAN_ROOT/logs/agent-runs/research-claude \
-  run-agent/scripts/run-agent.sh research-claude \
+# 3-way parallel research — PID-based log dirs keep them separate automatically
+run-agent/scripts/run-agent.sh research-claude \
     -v PLAN_FILE=_docs/plans/my-plan.md &
-ORCHESTRATE_LOG_DIR=$PLAN_ROOT/logs/agent-runs/research-codex \
-  run-agent/scripts/run-agent.sh research-codex \
+run-agent/scripts/run-agent.sh research-codex \
     -v PLAN_FILE=_docs/plans/my-plan.md &
-ORCHESTRATE_LOG_DIR=$PLAN_ROOT/logs/agent-runs/research-kimi \
-  run-agent/scripts/run-agent.sh research-kimi \
+run-agent/scripts/run-agent.sh research-kimi \
     -v PLAN_FILE=_docs/plans/my-plan.md &
 wait
 # Read all research notes at {SCOPE_ROOT}/scratch/research-claude.md, research-codex.md, research-kimi.md
@@ -140,10 +140,10 @@ wait
 ### Step 1: Setup
 
 1. Parse plan file path and derive `{plan-name}`
-2. Set `PLAN_ROOT=.runs/plans/{plan-name}`
+2. Set `RUNS_ROOT=$RUNS_DIR/plans/{plan-name}` and `PLAN_ROOT=$SESSION_DIR/plans/{plan-name}`
 3. Create runtime directories:
-   - `mkdir -p "$PLAN_ROOT"/{scratch/code/smoke,logs/agent-runs,handoffs,commits,slices,phases}`
-   - For each active phase/slice, also create `{scope-root}/scratch/code/smoke` and `{scope-root}/logs/agent-runs`
+   - `mkdir -p "$RUNS_ROOT"/{scratch/code/smoke,logs/agent-runs,slices}`
+   - `mkdir -p "$PLAN_ROOT"/{handoffs,commits,slices}`
 4. Read the plan to understand scope, phases, and slices
 
 ### Step 2: Plan Slice
@@ -174,7 +174,7 @@ run-agent/scripts/run-agent.sh review \
     -v SLICES_DIR=$SLICE_ROOT
 ```
 
-The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. For parallel multi-model review, launch multiple agents with different `-m` overrides and `ORCHESTRATE_LOG_DIR` suffixes. After all return, synthesize findings.
+The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. For parallel multi-model review, launch multiple agents with different `-m` overrides — PID-based log dirs keep them separate automatically. After all return, synthesize findings.
 
 **Evaluate:** If no cleanup files -> proceed to commit. If cleanup files exist -> run cleanup/implement with findings as context, then re-review. Use judgment: don't loop forever on style nits.
 

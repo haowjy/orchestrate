@@ -16,6 +16,6 @@ Scratch files and notes live under `scratch/` within the active scope root. The 
 
 ## Rules
 
-- Prefer small dated markdown notes (e.g., `scratch/2026-02-16-topic.md`) so context survives compaction
+- Use descriptive filenames (e.g., `scratch/findings.md`, `scratch/notes.md`) — the scope hierarchy provides context, not the filename
 - Do not store secrets or raw tokens in scratch files (`.env` values, JWTs, API keys, cookies)
-- Keep scratch content concise and slice-focused; delete stale notes when a slice is fully complete
+- Keep scratch content concise and scope-focused; delete stale notes when a slice is fully complete

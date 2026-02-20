@@ -12,14 +12,6 @@ resolve_repo_or_work_path() {
     return
   fi
 
-  # Paths starting with .runs/ resolve relative to ORCHESTRATE_RUNS_DIR.
-  if [[ "$path" == .runs/* ]] || [[ "$path" == ./.runs/* ]]; then
-    local rel="${path#./}"
-    rel="${rel#.runs/}"
-    echo "$ORCHESTRATE_RUNS_DIR/$rel"
-    return
-  fi
-
   # Prefer an existing path under WORK_DIR, then REPO_ROOT.
   if [[ -e "$WORK_DIR/$path" ]]; then
     echo "$WORK_DIR/$path"
@@ -51,7 +43,7 @@ derive_plan_root_from_plan_file() {
   base="${base// /-}"
   base="$(echo "$base" | sed 's#[^A-Za-z0-9._-]#-#g')"
   [[ -z "$base" ]] && base="unnamed-plan"
-  echo "$ORCHESTRATE_RUNS_DIR/plans/$base"
+  echo "$RUNS_DIR/plans/$base"
 }
 
 sanitize_log_label() {
@@ -105,7 +97,7 @@ infer_scope_root() {
   fi
 
   # Global default for ad-hoc runs.
-  echo "$ORCHESTRATE_RUNS_DIR/project"
+  echo "$RUNS_DIR/project"
 }
 
 # ─── Log Setup ────────────────────────────────────────────────────────────────
@@ -114,12 +106,11 @@ setup_logging() {
   local label
   label="$(sanitize_log_label "${AGENT_NAME:-$MODEL}")"
 
-  # External interface: ORCHESTRATE_LOG_DIR. Internal shorthand: LOG_DIR.
-  LOG_DIR="${ORCHESTRATE_LOG_DIR:-${LOG_DIR:-}}"
   if [[ -z "${LOG_DIR:-}" ]]; then
     local scope_root
     scope_root="$(infer_scope_root)"
-    LOG_DIR="$scope_root/logs/agent-runs/${label}"
+    # Append PID for parallel safety — multiple runs of the same agent get separate dirs.
+    LOG_DIR="$scope_root/logs/agent-runs/${label}-$$"
   fi
   mkdir -p "$LOG_DIR"
 }
@@ -136,7 +127,7 @@ write_log_params() {
   "tools": "$(json_escape "$TOOLS")",
   "skills": $skills_json,
   "cli": "$(json_escape "$cli_cmd")",
-  "harness": "$(json_escape "${ORCHESTRATE_DEFAULT_CLI:-$(route_model "$MODEL")}")",
+  "harness": "$(json_escape "$(route_model "$MODEL")")",
   "invoked_via": "$(json_escape "$0")",
   "script_dir": "$(json_escape "$SCRIPT_DIR")",
   "detail": "$(json_escape "$DETAIL")",
@@ -145,4 +136,16 @@ write_log_params() {
   "log_dir": "$(json_escape "$LOG_DIR")"
 }
 EOF
+}
+
+# ─── Session Index ───────────────────────────────────────────────────────────
+
+update_session_index() {
+  local scope_root
+  scope_root="$(infer_scope_root)"
+  # Map scope root from RUNS_DIR to SESSION_DIR
+  local session_scope="${scope_root/$RUNS_DIR/$SESSION_DIR}"
+  mkdir -p "$session_scope"
+  echo "${AGENT_NAME:-ad-hoc} | $MODEL | $$ | $EXIT_CODE | $LOG_DIR" \
+    >> "$session_scope/index.log"
 }

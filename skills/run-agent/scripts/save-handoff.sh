@@ -3,7 +3,7 @@
 # Called by the orchestrator (or a Claude Code hook) before context compaction.
 #
 # Usage: scripts/save-handoff.sh <plan-dir>
-#   plan-dir: path to the plan runtime directory (e.g., .runs/plans/my-plan)
+#   plan-dir: path to the plan session directory (e.g., $SESSION_DIR/plans/my-plan)
 
 set -euo pipefail
 

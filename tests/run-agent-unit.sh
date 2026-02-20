@@ -63,19 +63,20 @@ test_missing_option_value_is_friendly() {
   assert_contains "$output" "Usage: scripts/run-agent.sh" "missing option value should print usage"
 }
 
-test_runs_gitignore_auto_created() {
+test_init_dirs_created() {
   local test_tmp="$1"
-  local workdir="$test_tmp/work-runs"
+  local workdir="$test_tmp/work-init-dirs"
   mkdir -p "$workdir"
 
-  PATH="$test_tmp/bin:$PATH" "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" --dry-run >/dev/null
+  ORCHESTRATE_DEFAULT_CLI=codex \
+  PATH="$test_tmp/bin:$PATH" "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
 
-  assert_file_exists "$workdir/.runs/.gitignore" ".runs/.gitignore should be auto-created"
-  local contents
-  contents="$(cat "$workdir/.runs/.gitignore")"
-  if [[ "$contents" != $'*\n!.gitignore' ]]; then
-    fail "unexpected .runs/.gitignore contents"$'\n'"$contents"
-  fi
+  # Verify run-agent/.runs/project was created
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  [[ -d "$skills_dir/run-agent/.runs/project/logs/agent-runs" ]] || fail "run-agent/.runs/project/logs/agent-runs should be created"
+  [[ -d "$skills_dir/run-agent/.runs/project/scratch/code/smoke" ]] || fail "run-agent/.runs/project/scratch/code/smoke should be created"
+  [[ -d "$skills_dir/orchestrate/.session/project" ]] || fail "orchestrate/.session/project should be created"
 }
 
 test_project_local_agent_override() {
@@ -144,21 +145,48 @@ test_claude_tool_normalization() {
   assert_contains "$output" "--allowedTools Read,WebSearch,Bash" "Claude allowlist tools should be normalized to expected casing"
 }
 
-test_log_label_sanitized() {
+test_log_label_sanitized_with_pid() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-log-sanitize"
-  local runs_dir="$test_tmp/runs-log-sanitize"
   mkdir -p "$workdir"
 
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  local runs_dir="$skills_dir/run-agent/.runs"
+
   ORCHESTRATE_DEFAULT_CLI=codex \
-  ORCHESTRATE_RUNS_DIR="$runs_dir" \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model ../../tmp/x/y --prompt hi -C "$workdir" >/dev/null 2>&1
 
   local label_dir
-  label_dir="$(find "$runs_dir/project/logs/agent-runs" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  assert_file_exists "$label_dir/params.json" "sanitized log label directory should exist"
-  assert_contains "$label_dir" "..-..-tmp-x-y" "log label should be sanitized to a safe directory name"
+  label_dir="$(find "$runs_dir/project/logs/agent-runs" -mindepth 1 -maxdepth 1 -type d -name '..-..-tmp-x-y-*' | head -n 1)"
+  assert_file_exists "$label_dir/params.json" "sanitized log label directory with PID should exist"
+  # Verify PID is appended (pattern: label-PID)
+  local dirname
+  dirname="$(basename "$label_dir")"
+  if [[ ! "$dirname" =~ -[0-9]+$ ]]; then
+    fail "log dir should end with PID: $dirname"
+  fi
+}
+
+test_session_index_written() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-session-index"
+  mkdir -p "$workdir"
+
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  local session_dir="$skills_dir/orchestrate/.session"
+
+  ORCHESTRATE_DEFAULT_CLI=codex \
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
+
+  assert_file_exists "$session_dir/project/index.log" "index.log should be written after a run"
+  local last_line
+  last_line="$(tail -1 "$session_dir/project/index.log")"
+  assert_contains "$last_line" "gpt-5.3-codex" "index.log should contain model name"
+  assert_contains "$last_line" " | " "index.log should be pipe-delimited"
 }
 
 main() {
@@ -169,11 +197,12 @@ main() {
   setup_fake_cli_bin "$test_tmp/bin"
 
   test_missing_option_value_is_friendly "$test_tmp"
-  test_runs_gitignore_auto_created "$test_tmp"
+  test_init_dirs_created "$test_tmp"
   test_project_local_agent_override "$test_tmp"
   test_env_agent_dir_takes_precedence "$test_tmp"
   test_claude_tool_normalization "$test_tmp"
-  test_log_label_sanitized "$test_tmp"
+  test_log_label_sanitized_with_pid "$test_tmp"
+  test_session_index_written "$test_tmp"
 
   echo "PASS: run-agent script unit tests"
 }

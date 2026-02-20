@@ -5,7 +5,7 @@ Multi-agent toolkit for Claude Code, Codex, and OpenCode.
 - **`run-agent.sh`** — Script wrapper that routes agents to the right CLI based on model name. Normalizes prompt composition, tool allowlists, and output across Claude Code, Codex, and OpenCode.
 - **Skills** — Composable methodology files (review, research, planning, etc.) that get loaded into agent prompts. The `orchestrate` skill composes them into a supervisor loop.
 - **Agents** — 13 curated agent definitions for research, implementation, review, and utility tasks. Each specifies a model, tools, skills, and prompt. User-extensible.
-- **Logging** — Every agent run captures input prompt, raw output, human-readable report, files touched, and execution params. Organized by plan/slice scope under `.runs/`.
+- **Logging** — Every agent run captures input prompt, raw output, human-readable report, files touched, and execution params. Raw artifacts under `run-agent/.runs/`, coordination state under `orchestrate/.session/`.
 
 ## Install
 
@@ -193,7 +193,7 @@ AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
 # AGENT_RUNNER=.agents/skills/run-agent/scripts/run-agent.sh
 
 # Run an agent by name
-"$AGENT_RUNNER" review -v SLICES_DIR=.runs/plans/my-plan/slices/01-foo
+"$AGENT_RUNNER" review -v SLICES_DIR=path/to/slices/01-foo
 
 # Override model on any agent
 "$AGENT_RUNNER" implement -m claude-opus-4-6
@@ -210,13 +210,10 @@ AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
 # Force all agents through opencode
 ORCHESTRATE_DEFAULT_CLI=opencode "$AGENT_RUNNER" implement --dry-run
 
-# 3-way parallel research
-ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-claude \
-  "$AGENT_RUNNER" research-claude -v PLAN_FILE=my-plan.md &
-ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-codex \
-  "$AGENT_RUNNER" research-codex -v PLAN_FILE=my-plan.md &
-ORCHESTRATE_LOG_DIR=.runs/project/logs/agent-runs/research-kimi \
-  "$AGENT_RUNNER" research-kimi -v PLAN_FILE=my-plan.md &
+# 3-way parallel research — PID-based log dirs keep them separate automatically
+"$AGENT_RUNNER" research-claude -v PLAN_FILE=my-plan.md &
+"$AGENT_RUNNER" research-codex -v PLAN_FILE=my-plan.md &
+"$AGENT_RUNNER" research-kimi -v PLAN_FILE=my-plan.md &
 wait
 ```
 
@@ -226,8 +223,6 @@ wait
 
 | Variable | Description | Default |
 |---|---|---|
-| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` under the active working directory |
-| `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
 | `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
@@ -316,21 +311,26 @@ Override routing with `ORCHESTRATE_DEFAULT_CLI=opencode` to force all agents thr
 
 ## Logging
 
-Every agent run is logged under `.runs/`:
+Every agent run is logged under `run-agent/.runs/`, with coordination state under `orchestrate/.session/`:
 
 ```
-.runs/
-├── project/logs/agent-runs/     # ad-hoc runs
+{skills-dir}/run-agent/.runs/                    # raw per-run artifacts
+├── project/logs/agent-runs/{agent}-{PID}/       # ad-hoc runs
 └── plans/{plan-name}/
-    ├── slices/{slice}/
-    │   └── logs/agent-runs/{agent}/
-    │       ├── input.md          # composed prompt
-    │       ├── output.json       # raw CLI output
-    │       ├── report.md         # agent's summary
-    │       ├── params.json       # execution metadata
-    │       └── files-touched.txt # extracted file list
+    └── slices/{slice}/
+        └── logs/agent-runs/{agent}-{PID}/
+            ├── input.md          # composed prompt
+            ├── output.json       # raw CLI output
+            ├── report.md         # agent's summary
+            ├── params.json       # execution metadata
+            └── files-touched.txt # extracted file list
+
+{skills-dir}/orchestrate/.session/               # coordination state
+├── project/index.log                            # ad-hoc run index
+└── plans/{plan-name}/
+    ├── index.log
     ├── handoffs/                 # progress snapshots
-    └── scratch/                  # shared notes
+    └── commits/                  # commit records
 ```
 
 ## Execution Mode and Safety
@@ -341,9 +341,7 @@ Every agent run is logged under `.runs/`:
 
 Tool allowlists are currently applied only for Claude (`--allowedTools`). Codex and OpenCode do not expose equivalent allowlist flags in `exec/run`.
 
-`run-agent.sh` auto-creates `ORCHESTRATE_RUNS_DIR/.gitignore` with:
-`*` and `!.gitignore`
-so runtime artifacts stay untracked without requiring parent `.gitignore` edits.
+Runtime artifact directories (`run-agent/.runs/` and `orchestrate/.session/`) are kept untracked via per-skill `.gitignore` entries.
 
 Use this only in trusted repos/worktrees. Prefer reviewing `--dry-run` output when testing new agent prompts.
 

@@ -11,11 +11,20 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+# Resolve through symlinks so SKILLS_DIR is correct even when invoked via a symlink.
+_source="${BASH_SOURCE[0]}"
+while [[ -L "$_source" ]]; do
+  _dir="$(cd "$(dirname "$_source")" && pwd -P)"
+  _source="$(readlink "$_source")"
+  [[ "$_source" != /* ]] && _source="$_dir/$_source"
+done
+SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd -P)"
 CURRENT_DIR="$(pwd -P)"
 REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
 AGENTS_DIR="$(cd "$SCRIPT_DIR/../agents" && pwd -P)"
 SKILLS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+RUNS_DIR="$SKILLS_DIR/run-agent/.runs"
+SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -59,24 +68,9 @@ init_work_dir() {
   REPO_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORK_DIR")"
 }
 
-init_runs_dir() {
-  local default_runs_dir="$WORK_DIR/.runs"
-  ORCHESTRATE_RUNS_DIR="${ORCHESTRATE_RUNS_DIR:-$default_runs_dir}"
-
-  if [[ "$ORCHESTRATE_RUNS_DIR" != /* ]]; then
-    ORCHESTRATE_RUNS_DIR="$WORK_DIR/$ORCHESTRATE_RUNS_DIR"
-  fi
-
-  ORCHESTRATE_RUNS_DIR="$(mkdir -p "$ORCHESTRATE_RUNS_DIR" && cd "$ORCHESTRATE_RUNS_DIR" && pwd -P)"
-  mkdir -p "$ORCHESTRATE_RUNS_DIR/project"/{scratch/code/smoke,logs/agent-runs}
-
-  # Make runtime artifacts self-ignoring, even if parent repo .gitignore was not configured.
-  if [[ ! -f "$ORCHESTRATE_RUNS_DIR/.gitignore" ]]; then
-    cat > "$ORCHESTRATE_RUNS_DIR/.gitignore" <<'EOF'
-*
-!.gitignore
-EOF
-  fi
+init_dirs() {
+  mkdir -p "$RUNS_DIR/project"/{scratch/code/smoke,logs/agent-runs}
+  mkdir -p "$SESSION_DIR/project"
 }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -84,7 +78,7 @@ EOF
 parse_args "$@"
 init_work_dir
 validate_args
-init_runs_dir
+init_dirs
 
 COMPOSED_PROMPT="$(compose_prompt)"
 build_cli_command

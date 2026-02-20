@@ -23,8 +23,6 @@ Options:
   -C, --cd DIR         Working directory for subprocess
 
 Environment:
-  ORCHESTRATE_RUNS_DIR   Where to store run data (default: .runs/ under working directory)
-  ORCHESTRATE_LOG_DIR    Where to write logs (default: auto-derived from scope)
   ORCHESTRATE_DEFAULT_CLI  Force all model routing to a specific CLI (claude, codex, opencode)
   ORCHESTRATE_AGENT_DIR  Override agent definition directory (highest precedence)
 EOF

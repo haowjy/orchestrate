@@ -188,6 +188,9 @@ do_execute() {
   # Derive touched files from this run's session log.
   write_files_touched_from_log "$LOG_DIR/output.json" "$LOG_DIR/files-touched.txt"
 
+  # Append to orchestrate session index
+  update_session_index
+
   # Output report to stdout if it was written by the subagent
   if [[ -f "$LOG_DIR/report.md" ]]; then
     cat "$LOG_DIR/report.md"

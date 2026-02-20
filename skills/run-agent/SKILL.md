@@ -23,7 +23,7 @@ run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
 run-agent/scripts/run-agent.sh review --dry-run
 
 # With template variables
-run-agent/scripts/run-agent.sh implement -v SLICE_FILE=.runs/plans/my-plan/slices/slice-1/slice.md
+run-agent/scripts/run-agent.sh implement -v SLICE_FILE=$RUNS_DIR/plans/my-plan/slices/slice-1/slice.md
 
 # Brief report (default: standard)
 run-agent/scripts/run-agent.sh review -D brief
@@ -48,8 +48,6 @@ Every run appends a report instruction to the prompt. The subagent writes `repor
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ORCHESTRATE_RUNS_DIR` | Where to store run data (plans, logs, scratch) | `.runs/` under working directory |
-| `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
 | `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
@@ -112,7 +110,7 @@ Lookup precedence for `run-agent.sh <agent-name>`:
 
 ## Log Artifacts
 
-Each run writes to `{scope-root}/logs/agent-runs/{agent-name}/`:
+Each run writes to `{scope-root}/logs/agent-runs/{agent-name}-{PID}/`:
 
 - `params.json` — run parameters
 - `input.md` — composed prompt
@@ -124,9 +122,12 @@ Each run writes to `{scope-root}/logs/agent-runs/{agent-name}/`:
 
 Log directories are auto-derived from scope variables (`SLICE_FILE`, `SLICES_DIR`, `BREADCRUMBS`, `PLAN_FILE`):
 
-- project scope: `.runs/project/`
-- plan scope: `.runs/plans/{plan-name}/`
-- phase scope: `.runs/plans/{plan-name}/phases/{phase-name}/`
-- slice scope: `.runs/plans/{plan-name}/slices/{slice-name}/` (or via phase)
+- project scope: `$RUNS_DIR/project/`
+- plan scope: `$RUNS_DIR/plans/{plan-name}/`
+- slice scope: `$RUNS_DIR/plans/{plan-name}/slices/{slice-name}/`
+
+Where `$RUNS_DIR` is `{skills-dir}/run-agent/.runs/`.
 
 For any scope root: `{scope-root}/scratch/`, `{scope-root}/scratch/code/smoke/`, `{scope-root}/logs/agent-runs/`
+
+Parallel runs are safe by default — each run appends its PID to the log directory name.

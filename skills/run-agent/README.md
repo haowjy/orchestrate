@@ -6,7 +6,7 @@ Single entry point for running any agent. Routes models to the correct CLI tool,
 
 ```bash
 # Run an agent by name
-run-agent/scripts/run-agent.sh review -v SLICES_DIR=.runs/plans/my-plan/slices/01-foo
+run-agent/scripts/run-agent.sh review -v SLICES_DIR=path/to/slices/01-foo
 
 # Override model on any agent
 run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
@@ -74,7 +74,7 @@ scripts/extract-files-touched.sh <output-log> [output-file]
 Snapshots `handoffs/latest.md` into a timestamped file:
 
 ```bash
-scripts/save-handoff.sh .runs/plans/my-plan
+scripts/save-handoff.sh $SESSION_DIR/plans/my-plan
 ```
 
 ## Script Unit Tests
@@ -87,12 +87,12 @@ tests/run-agent-unit.sh
 
 | Variable | Description | Default |
 |---|---|---|
-| `ORCHESTRATE_RUNS_DIR` | Runtime data (plans, logs, scratch) | `.runs/` under working directory |
-| `ORCHESTRATE_LOG_DIR` | Override log directory for a single run | Auto-derived from scope |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI | Auto-detect from model name |
 | `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
 Tool allowlists are applied only when routed to Claude (`--allowedTools`). Codex and OpenCode currently do not expose equivalent allowlist flags in `exec/run`.
+
+Parallel runs are safe by default — each run appends its PID to the log directory name.
 
 ## Custom Agents
 

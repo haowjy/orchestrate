@@ -44,10 +44,10 @@ Run a named agent without `--dry-run` to execute for real:
 
 ```bash
 AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
-"$AGENT_RUNNER" review -v SLICES_DIR=.runs/plans/my-plan/slices/01-foo
+"$AGENT_RUNNER" review -v SLICES_DIR=path/to/slices/01-foo
 ```
 
-This writes run artifacts under `.runs/` (or `ORCHESTRATE_RUNS_DIR` if set).
+This writes run artifacts under `run-agent/.runs/` and session state under `orchestrate/.session/`.
 
 ## Troubleshooting / prerequisites
 

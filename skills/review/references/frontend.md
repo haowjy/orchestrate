@@ -34,12 +34,20 @@ When merging async results into existing state, use functional updates (`set((cu
 
 A writer creates a new document — it has content `""`. That's a real document they're about to type in, not missing state. If code checks `if (!content)` it treats that empty document as absent, triggering loading states, skipping saves, or dropping streaming deltas. JavaScript's falsy coercion (`""`, `0`, `false`, `null`, `undefined` all falsy) makes this easy to get wrong — the language doesn't distinguish "empty" from "absent" unless you're explicit.
 
-The backend uses `optional.Optional[T]` for tri-state PATCH semantics (omitted vs null vs value). The frontend must respect this — sending `null` means "clear the field", sending `undefined`/omitting means "don't change", and sending `""` means "set to empty string". These are different API calls with different results.
+The backend uses `optional.Optional[T]` for tri-state PATCH semantics. The frontend controls this via JSON serialization — `JSON.stringify` omits `undefined` fields and keeps `null` fields:
+
+```typescript
+JSON.stringify({ a: undefined, b: null, c: "" })
+// → '{"b":null,"c":""}'
+// a is omitted (don't change), b is null (clear), c is "" (set empty)
+```
+
+So when building PATCH request bodies: omit the field entirely to "don't change", set it to `null` to "clear", and set it to `""` to "set empty string". Don't accidentally collapse these — e.g., `value || null` turns `""` into `null`, which changes "set empty" into "clear."
 
 **The pattern**:
 - Use `??` not `||` for defaults (`""` triggers `||` fallback, `??` only triggers on `null`/`undefined`)
 - Use `value == null` not `!value` for absence checks (`== null` catches both null and undefined)
-- Use `value !== undefined` when you need to distinguish null (clear) from undefined (omit)
+- When building PATCH bodies, only include fields that changed — don't send every field
 - An empty document should render an empty editor, not a "no content" state
 
 ## Use Shared UI Components

@@ -51,20 +51,15 @@ git clone https://github.com/haowjy/orchestrate .agents/.orchestrate
 echo '.agents/.orchestrate/' >> .gitignore   # keep the clone out of parent repo
 ```
 
-**2. Create skill symlinks**
+**2. Run install**
 
 ```bash
-cd .agents/skills
-for skill in ../.orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
-cd -
-
-mkdir -p .claude/skills && cd .claude/skills
-for skill in ../../.agents/.orchestrate/skills/*/; do ln -s "$skill" "$(basename "$skill")"; done
-cd -
+bash .agents/.orchestrate/install.sh
 ```
 
-On Windows (or if symlinks aren't available), copy instead:
+Or manually copy skills:
 ```bash
+mkdir -p .agents/skills .claude/skills
 for skill in .agents/.orchestrate/skills/*/; do
   cp -r "$skill" ".agents/skills/$(basename "$skill")"
   cp -r "$skill" ".claude/skills/$(basename "$skill")"
@@ -83,16 +78,16 @@ Result:
 .agents/
 ├── .orchestrate/         # submodule or clone (hidden)
 └── skills/
-    ├── orchestrate -> ../.orchestrate/skills/orchestrate
-    ├── run-agent -> ../.orchestrate/skills/run-agent
-    ├── review -> ../.orchestrate/skills/review
-    ├── research -> ../.orchestrate/skills/research
-    └── ...               # other skill symlinks
+    ├── orchestrate/      # copied from .orchestrate/skills/orchestrate
+    ├── run-agent/        # copied from .orchestrate/skills/run-agent
+    ├── review/
+    ├── research/
+    └── ...
 
 .claude/skills/
-├── orchestrate -> ../../.agents/.orchestrate/skills/orchestrate
-├── run-agent -> ../../.agents/.orchestrate/skills/run-agent
-├── review -> ../../.agents/.orchestrate/skills/review
+├── orchestrate/
+├── run-agent/
+├── review/
 └── ...
 ```
 
@@ -125,18 +120,19 @@ If installed as clone:
 cd .agents/.orchestrate && git pull && cd -
 ```
 
-Re-run `install.sh` after updating if new skills were added (or re-run the copy commands if you used `--link copy`).
+Re-run `install.sh` after updating to refresh skill copies. Re-running preserves any custom agents or files you added.
 
 ### Customizing agents per-repo
 
-Copy an agent out of the submodule to override it locally:
+Add new agent definitions alongside the shipped ones:
 
 ```bash
-cp .agents/.orchestrate/skills/run-agent/agents/implement.md \
-   .agents/skills/run-agent/agents/implement.md
+# Add a project-specific agent
+vi .agents/skills/run-agent/agents/implement-backend.md
+vi .agents/skills/run-agent/agents/review-security.md
 ```
 
-The local copy takes precedence (see [Agent lookup order](#custom-agents)).
+Re-running `install.sh` after an update will overwrite shipped files but never delete your additions. If you need to customize a shipped agent, create a new one instead of editing it — edits to shipped files will be lost on re-install.
 
 ## Getting Started
 

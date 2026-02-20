@@ -2,7 +2,10 @@
 # install.sh — post-clone/submodule setup for orchestrate
 #
 # Assumes orchestrate is already at .agents/.orchestrate (via clone or submodule).
-# Creates per-skill links (symlink or copy) into .agents/skills/ and .claude/skills/.
+# Copies skills into .agents/skills/ and .claude/skills/.
+#
+# On first run: copies all skill directories.
+# On re-run: overwrites orchestrate-defined files, preserves user additions.
 #
 # Usage:
 #   bash .agents/.orchestrate/install.sh [OPTIONS]
@@ -10,17 +13,14 @@
 # Options:
 #   --method submodule|clone   How orchestrate was added (default: auto-detect)
 #                              clone: adds .agents/.orchestrate to .gitignore
-#   --link   symlink|copy      Link strategy (default: symlink)
-#                              copy: use on Windows or when symlinks aren't available
 #
-# Safe to re-run (idempotent).
+# Safe to re-run (idempotent). User-added files are never deleted.
 
 set -euo pipefail
 
 # --- Defaults ---
 
 METHOD=""    # auto-detect
-LINK="symlink"
 
 # --- Parse arguments ---
 
@@ -30,12 +30,6 @@ while [[ $# -gt 0 ]]; do
       METHOD="$2"; shift 2
       if [[ "$METHOD" != "submodule" && "$METHOD" != "clone" ]]; then
         echo "Error: --method must be 'submodule' or 'clone'" >&2; exit 1
-      fi
-      ;;
-    --link)
-      LINK="$2"; shift 2
-      if [[ "$LINK" != "symlink" && "$LINK" != "copy" ]]; then
-        echo "Error: --link must be 'symlink' or 'copy'" >&2; exit 1
       fi
       ;;
     -h|--help)
@@ -88,17 +82,17 @@ if [[ -z "$METHOD" ]]; then
   echo "Auto-detected method: $METHOD"
 fi
 
-# --- Link targets ---
+# --- Copy targets ---
 
 AGENTS_SKILLS="$PROJECT_ROOT/.agents/skills"
 CLAUDE_SKILLS="$PROJECT_ROOT/.claude/skills"
 
-# --- Create skill links (symlink or copy) ---
+# --- Copy skills (overwrite ours, preserve user additions) ---
 
-link_skills() {
+copy_skills() {
   local target_dir="$1"
-  local created=0
-  local skipped=0
+  local copied=0
+  local updated=0
 
   mkdir -p "$target_dir"
 
@@ -107,44 +101,28 @@ link_skills() {
     skill_name="$(basename "$skill_path")"
     dest="$target_dir/$skill_name"
 
-    if [[ "$LINK" == "symlink" ]]; then
-      # Compute relative path from target_dir to skill_path
-      rel_path="$(python3 -c "import os.path; print(os.path.relpath('$skill_path', '$target_dir'))" 2>/dev/null)" \
-        || rel_path="$(realpath --relative-to="$target_dir" "$skill_path")"
+    if [[ -L "$dest" ]]; then
+      # Replace old symlinks from previous install method
+      rm "$dest"
+    fi
 
-      if [[ -L "$dest" ]]; then
-        existing="$(readlink "$dest")"
-        if [[ "$existing" == "$rel_path" ]]; then
-          ((skipped++)) || true; continue
-        fi
-        rm "$dest"
-      elif [[ -e "$dest" ]]; then
-        echo "  skip $dest (exists and is not a symlink)"
-        ((skipped++)) || true; continue
-      fi
-
-      ln -s "$rel_path" "$dest"
-      ((created++)) || true
+    if [[ -d "$dest" ]]; then
+      # Skill dir exists — overwrite orchestrate-defined files, keep user additions
+      cp -r "$skill_path"/* "$dest"/ 2>/dev/null || true
+      ((updated++)) || true
     else
-      # Copy mode
-      if [[ -d "$dest" && ! -L "$dest" ]]; then
-        # Already a real directory — overwrite contents
-        rm -rf "$dest"
-      elif [[ -L "$dest" ]]; then
-        rm "$dest"
-      fi
-
+      # First install — copy entire skill directory
       cp -r "$skill_path" "$dest"
-      ((created++)) || true
+      ((copied++)) || true
     fi
   done
 
-  echo "  $target_dir: $created ${LINK}ed, $skipped unchanged"
+  echo "  $target_dir: $copied new, $updated updated"
 }
 
-echo "Installing skills (${LINK})..."
-link_skills "$AGENTS_SKILLS"
-link_skills "$CLAUDE_SKILLS"
+echo "Installing skills..."
+copy_skills "$AGENTS_SKILLS"
+copy_skills "$CLAUDE_SKILLS"
 
 # --- Ensure .runs/ is ignored in the parent repo ---
 
@@ -172,7 +150,7 @@ fi
 # --- Summary ---
 
 echo ""
-echo "Done! Orchestrate is ready (method=$METHOD, link=$LINK)."
+echo "Done! Orchestrate is ready (method=$METHOD)."
 echo ""
 echo "Verify:"
 echo "  ls -la $AGENTS_SKILLS/"

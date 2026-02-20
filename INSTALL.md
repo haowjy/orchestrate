@@ -4,15 +4,11 @@ This file is for LLMs helping users install orchestrate. Follow these instructio
 
 ## Before you start
 
-Ask the user two questions:
+Ask the user one question:
 
 1. **Submodule or clone?**
    - **Submodule** — version is pinned and tracked by the parent repo; collaborators get it automatically with `git clone --recurse-submodules`; update with `git submodule update --remote`
    - **Clone** — simpler; just a nested git repo; update with `git pull`; not tracked by the parent repo so each developer manages their own version
-
-2. **Symlink or copy?**
-   - **Symlink** (default) — skill directories are symlinked; updates to orchestrate are reflected immediately; saves disk space
-   - **Copy** — skill directories are copied; required on Windows or filesystems that don't support symlinks; must re-run install after updating orchestrate
 
 ## Step 1: Add orchestrate
 
@@ -31,15 +27,16 @@ git clone https://github.com/haowjy/orchestrate .agents/.orchestrate
 
 ## Step 2: Run setup
 
-Compose the `install.sh` command based on the user's answers:
-
 ```bash
-bash .agents/.orchestrate/install.sh --method <submodule|clone> --link <symlink|copy>
+bash .agents/.orchestrate/install.sh
 ```
 
-Examples:
-- Submodule + symlink (most common): `bash .agents/.orchestrate/install.sh --method submodule --link symlink`
-- Clone + copy (Windows): `bash .agents/.orchestrate/install.sh --method clone --link copy`
+The script auto-detects whether you used submodule or clone. To override:
+
+```bash
+bash .agents/.orchestrate/install.sh --method submodule
+bash .agents/.orchestrate/install.sh --method clone
+```
 
 ## Step 3: Verify
 
@@ -48,7 +45,7 @@ ls -la .agents/skills/
 ls -la .claude/skills/
 ```
 
-Both directories should contain entries for each skill (symlinks or directories depending on `--link` choice).
+Both directories should contain skill directories (orchestrate, run-agent, review, etc.).
 
 ## Updating
 
@@ -64,11 +61,13 @@ git submodule update --remote .agents/.orchestrate
 cd .agents/.orchestrate && git pull && cd -
 ```
 
-If `--link copy` was used, re-run install to refresh copies:
+Then re-run install to update skill copies:
 
 ```bash
-bash .agents/.orchestrate/install.sh --method <submodule|clone> --link copy
+bash .agents/.orchestrate/install.sh
 ```
+
+Re-running install overwrites shipped files but preserves any custom agents or files you added.
 
 ## Uninstalling
 
@@ -86,14 +85,9 @@ rm -rf .git/modules/.agents/.orchestrate
 rm -rf .agents/.orchestrate
 ```
 
-Then remove skill links from both directories:
+Then remove copied skill directories:
 
 ```bash
-# Remove symlinks
-find .agents/skills -maxdepth 1 -type l -delete
-find .claude/skills -maxdepth 1 -type l -delete
-
-# Or if --link copy was used, remove the copied skill directories
 for skill in .agents/.orchestrate/skills/*/; do
   name="$(basename "$skill")"
   rm -rf ".agents/skills/$name" ".claude/skills/$name"

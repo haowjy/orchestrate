@@ -78,6 +78,10 @@ Rules:
 | `ORCHESTRATE_PLAN` | Default plan name for `--slice` shorthand | unset |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
 | `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
+| `ORCHESTRATE_CODEX_HOME` | Codex state dir fallback when `~/.codex` is not writable | `$RUNS_DIR/codex-home` |
+
+Notes:
+- If `CODEX_HOME` is already set in the environment, `run-agent` uses it as-is.
 
 ## Model Routing
 

@@ -58,6 +58,36 @@ normalize_tools_for_harness() {
   esac
 }
 
+resolve_codex_home() {
+  # Respect explicit caller override.
+  if [[ -n "${CODEX_HOME:-}" ]]; then
+    echo "$CODEX_HOME"
+    return
+  fi
+
+  # Default Codex behavior writes under ~/.codex. Keep that default when it is
+  # actually writable so existing auth/session state continues to work.
+  if [[ -n "${HOME:-}" ]]; then
+    local default_codex_home="$HOME/.codex"
+    if [[ -d "$default_codex_home" ]]; then
+      local probe_file="$default_codex_home/.run-agent-write-probe-$$"
+      if touch "$probe_file" >/dev/null 2>&1; then
+        rm -f "$probe_file" 2>/dev/null || true
+        echo ""
+        return
+      fi
+    elif [[ ! -e "$default_codex_home" ]]; then
+      if mkdir -p "$default_codex_home" 2>/dev/null; then
+        echo ""
+        return
+      fi
+    fi
+  fi
+
+  # Sandbox-safe fallback for environments that block writes to HOME.
+  echo "${ORCHESTRATE_CODEX_HOME:-$RUNS_DIR/codex-home}"
+}
+
 build_cli_command() {
   local tool
   local normalized_tools
@@ -97,7 +127,14 @@ build_cli_command() {
       CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --verbose --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
       ;;
     codex)
-      CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      local codex_home
+      codex_home="$(resolve_codex_home)"
+      if [[ -n "$codex_home" ]]; then
+        mkdir -p "$codex_home" 2>/dev/null || true
+        CLI_CMD_ARGV=(env CODEX_HOME="$codex_home" codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      else
+        CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      fi
       ;;
     opencode)
       # opencode --format json emits structured JSON events on stdout.

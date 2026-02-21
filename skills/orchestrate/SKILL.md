@@ -139,7 +139,11 @@ wait
 
 ### Step 1: Setup
 
-1. Parse plan file path and derive `{plan-name}`
+1. Parse plan file path and derive `{plan-name}`. Use `{branch}/{plan-filename}` where branch comes from `git branch --show-current` and plan-filename is the `.md` filename without extension. Keep the full branch name as-is (including prefixes). The result can contain `/` — runtime directories will nest naturally.
+   - Example: branch `h/collab`, file `phase-5-proposal-review.md` → `h/collab/phase-5-proposal-review`
+   - Example: branch `main`, file `auth-refactor.md` → `main/auth-refactor`
+   - Example: branch `feat/backend-perf`, file `migrate-to-pgx.md` → `feat/backend-perf/migrate-to-pgx`
+   - If `--plan-name NAME` was provided, use that instead
 2. Set `RUNS_ROOT=$RUNS_DIR/plans/{plan-name}` and `PLAN_ROOT=$SESSION_DIR/plans/{plan-name}`
 3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all subagent `--slice` calls inherit this automatically
 4. Create runtime directories:

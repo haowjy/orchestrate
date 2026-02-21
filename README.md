@@ -104,6 +104,28 @@ cd .agents/.orchestrate && git pull && cd -
 
 Re-run `install.sh` after updating to refresh skill copies. Re-running preserves any custom agents or files you added.
 
+### Syncing
+
+After updating the submodule or editing skills locally, use `sync.sh` to keep all three locations in sync:
+
+```bash
+# After git submodule update — pull upstream changes into project
+bash .agents/.orchestrate/sync.sh pull
+
+# After editing skills in .claude/skills/ — push changes back
+bash .agents/.orchestrate/sync.sh push
+
+# Check what's different between all three locations
+bash .agents/.orchestrate/sync.sh status
+```
+
+**Three locations:**
+- `.agents/.orchestrate/skills/` — upstream defaults (submodule)
+- `.agents/skills/` — project copy (used by Codex/OpenCode)
+- `.claude/skills/` — project copy (used by Claude Code)
+
+Both project copies (`.agents/skills/` and `.claude/skills/`) should be identical. Custom files (project-only agents, review references) are preserved in both directions. Agent definitions (`agents/*.md`) are skipped by default — use `--include-agents` to sync them.
+
 ### Customizing agents per-repo
 
 Add new agent definitions alongside the shipped ones:

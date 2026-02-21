@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
 # Validate Mermaid diagrams in markdown files.
 # Usage:
-#   check-mermaid.sh                    # all .md files under _docs/ and scratch/
+#   check-mermaid.sh                    # all .md files recursively from cwd
 #   check-mermaid.sh path/to/file.md    # specific file(s)
-#   check-mermaid.sh _docs/features/    # specific directory
+#   check-mermaid.sh docs/features/     # specific directory
 #
 # Requires: npx @mermaid-js/mermaid-cli (auto-installed on first run)
 
 set -euo pipefail
 
-# Find repo root via git (works from any location)
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "Error: not inside a git repository." >&2
-  exit 1
-}
+# Use current working directory as root for relative paths
+ROOT_DIR="$(pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -28,20 +25,16 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 # Collect files to check
 files=()
 if [ $# -eq 0 ]; then
-  # Default: all .md files under _docs/ and scratch/
+  # Default: all .md files recursively from cwd
   while IFS= read -r -d '' f; do
     files+=("$f")
-  done < <(find "$REPO_ROOT/_docs" "$REPO_ROOT/scratch" -name '*.md' -print0 2>/dev/null || true)
-  # Also check root and subdir CLAUDE.md files
-  while IFS= read -r -d '' f; do
-    files+=("$f")
-  done < <(find "$REPO_ROOT" -maxdepth 3 -name 'CLAUDE.md' -print0 2>/dev/null || true)
+  done < <(find "$ROOT_DIR" -name '*.md' -not -path '*/node_modules/*' -not -path '*/.git/*' -print0 2>/dev/null || true)
 else
   for arg in "$@"; do
     if [ -d "$arg" ]; then
       while IFS= read -r -d '' f; do
         files+=("$f")
-      done < <(find "$arg" -name '*.md' -print0)
+      done < <(find "$arg" -name '*.md' -not -path '*/node_modules/*' -print0)
     elif [ -f "$arg" ]; then
       files+=("$arg")
     else
@@ -95,7 +88,7 @@ failed=0
 failed_details=()
 
 for file in "${files[@]}"; do
-  rel_path="${file#"$REPO_ROOT"/}"
+  rel_path="${file#"$ROOT_DIR"/}"
 
   # Extract blocks
   while IFS= read -r block_info; do

@@ -112,15 +112,12 @@ Note over A: First; isLoading=false
 The validation script lives at `scripts/check-mermaid.sh` within this skill directory. It extracts each ` ```mermaid ` block, validates it with `mmdc`, and reports file + line number for failures.
 
 ```bash
-# Find the script (works from any skill install location)
-MERMAID_CHECK="$(dirname "$(find .claude/skills/mermaid .agents/skills/mermaid -name check-mermaid.sh 2>/dev/null | head -1)")/check-mermaid.sh"
-
 # Validate specific file
-$MERMAID_CHECK path/to/file.md
+.claude/skills/mermaid/scripts/check-mermaid.sh path/to/file.md
 
-# Validate all docs
-$MERMAID_CHECK
+# Validate all .md files recursively from cwd
+.claude/skills/mermaid/scripts/check-mermaid.sh
 
 # Validate a directory
-$MERMAID_CHECK _docs/features/
+.claude/skills/mermaid/scripts/check-mermaid.sh docs/features/
 ```

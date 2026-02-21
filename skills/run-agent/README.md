@@ -34,8 +34,7 @@ Markdown files with YAML frontmatter. Each defines model, tools, skills, and pro
 
 | Agent | Model | Effort | Personality |
 |---|---|---|---|
-| `review` | claude-opus-4-6 | high | Thoughtful senior dev |
-| `review-thorough` | gpt-5.3-codex | high | Exhaustive auditor |
+| `review` | gpt-5.3-codex | high | Exhaustive default reviewer |
 | `review-quick` | gpt-5.3-codex | low | Fast sanity check |
 | `review-adversarial` | claude-sonnet-4-6 | high | Adversarial tester |
 

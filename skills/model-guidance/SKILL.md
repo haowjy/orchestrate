@@ -37,14 +37,8 @@ Use when:
 
 ### Review Agents
 
-### `review` (claude-opus-4-6) — **Default**
-Thoughtful senior dev with strong design sense. Catches real issues without noise. Good balance of thoroughness and signal-to-noise ratio. Use for most slices.
-
-### `review-thorough` (gpt-5.3-codex, high effort)
-Exhaustive auditor — leave-no-stone-unturned. Use for:
-- Important or high-risk slices (auth, payments, data migrations)
-- Final review before a major release
-- When you want security + perf + architecture deep-dive
+### `review` (gpt-5.3-codex, high effort) — **Default**
+Exhaustive default reviewer — thorough senior dev that leaves no stone unturned. Catches real issues across security, perf, and architecture. Use for most slices, including high-risk changes.
 
 ### `review-quick` (gpt-5.3-codex, low effort)
 Fast mechanical sanity check. Use for:
@@ -87,6 +81,6 @@ All research agents have the same goal: explore the codebase, research best prac
 1. **Start with `implement`** (default) unless you have a specific reason to use a variant.
 2. **Switch to `implement-iterative`** if the slice is UI-focused and you want faster cycles.
 3. **Escalate to `implement-deliberate`** if a slice fails on the first attempt or involves tricky logic.
-4. **Use `review`** (default) for most slices. Escalate to `review-thorough` or `review-adversarial` for important changes.
+4. **Use `review`** (default) for most slices. Escalate to `review-adversarial` for important changes.
 5. **Use `review-quick`** for trivial slices where a fast sanity check suffices.
 6. **Use `-m MODEL` override** on any agent when you want to temporarily switch models without changing the agent definition.

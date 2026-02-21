@@ -95,7 +95,7 @@ Tool names in agent definitions are normalized for Claude's `--allowedTools` cas
 
 ## Available Agents
 
-`cleanup`, `commit`, `implement`, `implement-deliberate`, `implement-iterative`, `plan-slice`, `research-claude`, `research-codex`, `research-kimi`, `review`, `review-adversarial`, `review-quick`, `review-thorough`
+`cleanup`, `commit`, `implement`, `implement-deliberate`, `implement-iterative`, `plan-slice`, `research`, `review`, `review-adversarial`, `review-quick`
 
 See the `model-guidance` skill for detailed descriptions, model assignments, and selection guidance.
 

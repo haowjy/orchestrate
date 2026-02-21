@@ -127,18 +127,14 @@ But you can deviate: skip review for trivial changes, run multiple reviewers in 
 
 ### Step 0 (Optional): Research
 
-If the plan doesn't exist yet or needs deeper context, launch research agents to explore the codebase and gather information before planning:
+If the plan doesn't exist yet or needs deeper context, launch research with multiple models for different perspectives:
 
 ```bash
-# 3-way parallel research — PID-based log dirs keep them separate automatically
-run-agent/scripts/run-agent.sh research-claude \
-    -v PLAN_FILE=_docs/plans/my-plan.md &
-run-agent/scripts/run-agent.sh research-codex \
-    -v PLAN_FILE=_docs/plans/my-plan.md &
-run-agent/scripts/run-agent.sh research-kimi \
-    -v PLAN_FILE=_docs/plans/my-plan.md &
+# Parallel multi-model research — PID-based log dirs keep them separate
+run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md &
+run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md -m claude-sonnet-4-6 &
 wait
-# Read all research notes at {SCOPE_ROOT}/scratch/research-claude.md, research-codex.md, research-kimi.md
+# Read reports from each run's log dir
 ```
 
 ### Step 1: Setup
@@ -173,11 +169,22 @@ After: read the agent output log and slice file for completion notes.
 
 ### Step 4: Review
 
+For large or important changes, launch `review` with multiple models in parallel to get different perspectives:
+
+```bash
+# Parallel dual-model review (recommended for large changes)
+run-agent/scripts/run-agent.sh review --slice {slice-name} &
+run-agent/scripts/run-agent.sh review --slice {slice-name} -m claude-opus-4-6 &
+wait
+```
+
+For smaller changes, a single reviewer is sufficient:
+
 ```bash
 run-agent/scripts/run-agent.sh review --slice {slice-name}
 ```
 
-The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. For parallel multi-model review, launch multiple agents with different `-m` overrides — PID-based log dirs keep them separate automatically. After all return, synthesize findings.
+The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. PID-based log dirs keep parallel runs separate automatically. After all return, synthesize findings from both.
 
 **Evaluate:** If no cleanup files -> proceed to commit. If cleanup files exist -> run cleanup/implement with findings as context, then re-review. Use judgment: don't loop forever on style nits.
 

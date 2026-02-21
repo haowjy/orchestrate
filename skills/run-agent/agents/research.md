@@ -1,7 +1,7 @@
 ---
-name: research-kimi
-description: Research agent (kimi) — explores codebase, researches best practices, evaluates approaches
-model: opencode/kimi-k2.5-free
+name: research
+description: Research agent — explores codebase, researches best practices, evaluates approaches. Override with -m for multi-model perspectives.
+model: gpt-5.3-codex
 tools: Read,Bash,Glob,Grep,WebSearch,WebFetch
 skills:
   - research
@@ -25,6 +25,6 @@ You are a research agent. Your job is to deeply understand the problem, explore 
 
 ## Output
 
-Write findings to `{SCOPE_ROOT}/scratch/research-kimi.md`.
+Write findings to your report (report.md — auto-created by run-agent). For detailed notes, also write to `{SCOPE_ROOT}/scratch/research.md`.
 
-If `{{PLAN_FILE}}` is set, derive SCOPE_ROOT from it. Otherwise, write to `scratch/research-kimi.md` in the current working directory.
+If `{{PLAN_FILE}}` is set, derive SCOPE_ROOT from it. Otherwise, write to `scratch/research.md` in the current working directory.

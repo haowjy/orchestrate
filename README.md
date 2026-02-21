@@ -174,9 +174,15 @@ You write a plan (markdown). The orchestrator reads it and autonomously loops th
 
 | Agent | Model | Focus |
 |---|---|---|
-| `research-claude` | claude-sonnet-4-6 | Web + codebase exploration |
-| `research-codex` | gpt-5.3-codex | Deep codebase analysis + web search |
-| `research-kimi` | opencode/kimi-k2.5-free | Alternative perspective via Kimi |
+| `research` | gpt-5.3-codex | Codebase exploration + web research + approach evaluation |
+
+Launch with `-m` overrides for multi-model perspectives:
+
+```bash
+run-agent.sh research -v PLAN_FILE=my-plan.md &
+run-agent.sh research -v PLAN_FILE=my-plan.md -m claude-sonnet-4-6 &
+wait
+```
 
 ### Implementation
 
@@ -190,10 +196,17 @@ You write a plan (markdown). The orchestrator reads it and autonomously loops th
 
 | Agent | Model | Effort | Personality |
 |---|---|---|---|
-| `review` | claude-opus-4-6 | high | Thoughtful senior dev — SOLID, consistency, clean code |
-| `review-thorough` | gpt-5.3-codex | high | Exhaustive auditor — SOLID, consistency, clean code deep-dive |
+| `review` | gpt-5.3-codex | high | Thorough reviewer — SOLID, consistency, clean code |
 | `review-quick` | gpt-5.3-codex | low | Fast sanity check — obvious bugs and blockers only |
 | `review-adversarial` | claude-sonnet-4-6 | high | Adversarial tester — writes scratch tests to break the code |
+
+For large changes, launch `review` with multiple models in parallel to get different perspectives:
+
+```bash
+run-agent.sh review --slice slice-1 &
+run-agent.sh review --slice slice-1 -m claude-opus-4-6 &
+wait
+```
 
 All review agents support **dual mode**: given a plan, they review the plan; given implemented code, they review the code.
 

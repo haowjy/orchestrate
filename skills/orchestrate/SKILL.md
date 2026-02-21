@@ -171,6 +171,8 @@ run-agent/scripts/run-agent.sh implement --slice {slice-name}
 
 After: read the agent output log and slice file for completion notes.
 
+**If the slice involves documentation with Mermaid diagrams:** Include the `mermaid` skill (`--skills mermaid`) or add `-f .claude/skills/mermaid/SKILL.md` so the agent follows Mermaid syntax rules and validates with `./scripts/check-mermaid.sh`.
+
 ### Step 4: Review
 
 For large or important changes, launch `review` with multiple models in parallel to get different perspectives:

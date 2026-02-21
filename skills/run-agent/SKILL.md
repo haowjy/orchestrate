@@ -93,6 +93,22 @@ The `opencode-` prefix is stripped before passing to the CLI. The `provider/mode
 
 Tool names in agent definitions are normalized for Claude's `--allowedTools` casing (e.g., `read` -> `Read`, `websearch` -> `WebSearch`). Codex and OpenCode currently do not expose tool allowlist flags in `exec/run`.
 
+## Passing Context to Agents
+
+When an agent needs to work with a plan, slice, or reference material, use the right mechanism:
+
+| Mechanism | When to use | Example |
+|-----------|-------------|---------|
+| `-v PLAN_FILE=<path>` | Agent has `{{PLAN_FILE}}` template var (research, plan-slice, review) | `-v PLAN_FILE=plans/my-plan.md` |
+| `-v SLICE_FILE=<path>` | Agent has `{{SLICE_FILE}}` template var (implement, review, commit) | `--slice slice-1` (shorthand) |
+| `-f <path>` | Extra context files appended to prompt (no template var needed) | `-f path/to/reference.md` |
+| `-p "..."` | Ad-hoc prompt text | `-p "Review auth changes"` |
+
+**Common mistakes:**
+- Don't describe a file's contents in `-p` — pass the file via `-v` or `-f` instead. The agent needs to read the actual file.
+- Don't use `-f` when the agent has a template variable for that input — use `-v` so the agent's prompt references it correctly.
+- When reviewing a plan, pass it as `PLAN_FILE` so the agent knows it's reviewing a plan (not just extra context).
+
 ## Available Agents
 
 `cleanup`, `commit`, `implement`, `implement-deliberate`, `implement-iterative`, `plan-slice`, `research`, `review`, `review-adversarial`, `review-quick`

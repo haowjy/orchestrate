@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Flexible supervisor loop — launches agents via run-agent.sh to implement plans.
-allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/save-handoff.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(rm */orchestrate/.session/*), Bash(rm */run-agent/.runs/*), Bash(cp *), Bash(ln *), Bash(date *)
+allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/record-commit.sh *), Bash(*/run-agent/scripts/log-inspect.sh *), Bash(*/run-agent/scripts/save-handoff.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(rm */orchestrate/.session/*), Bash(rm */run-agent/.runs/*), Bash(cp *), Bash(ln *), Bash(date *)
 ---
 
 # Orchestrate — Supervisor Skill
@@ -84,14 +84,18 @@ Use `run-agent/scripts/run-agent.sh` for everything. Log directories are auto-de
 Every run produces a `report.md` (written by the subagent) and prints it to stdout. Read the report to understand what the agent did — don't parse verbose logs. Use `-D brief` for quick checks or `-D detailed` for deep analysis (default: `standard`).
 
 ```bash
-# Using an agent definition (log dir auto-derived from SLICE_FILE)
-run-agent/scripts/run-agent.sh implement -v SLICE_FILE=$SLICE_ROOT/slice.md
+# Using --plan/--slice shorthand (preferred — log dirs auto-derived)
+run-agent/scripts/run-agent.sh implement --plan my-plan --slice slice-1
 
-# Pass reference files (appended as a "Reference Files" section in prompt)
-run-agent/scripts/run-agent.sh implement \
-    -v SLICE_FILE=$SLICE_ROOT/slice.md \
-    -f path/to/extra-context.md \
-    -f path/to/another-file.txt
+# When ORCHESTRATE_PLAN is exported (set in Step 1), --slice alone works
+run-agent/scripts/run-agent.sh implement --slice slice-1
+
+# Pass reference files
+run-agent/scripts/run-agent.sh implement --slice slice-1 \
+    -f path/to/extra-context.md
+
+# Equivalent long form with -v (still supported)
+run-agent/scripts/run-agent.sh implement -v SLICE_FILE=$SLICE_ROOT/slice.md
 
 # Ad-hoc with skills
 run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
@@ -100,8 +104,8 @@ run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Rev
 run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
 
 # Parallel multi-variant review — PID-based log dirs keep them separate automatically
-run-agent/scripts/run-agent.sh review &
-run-agent/scripts/run-agent.sh review -m claude-opus-4-6 &
+run-agent/scripts/run-agent.sh review --slice slice-1 &
+run-agent/scripts/run-agent.sh review --slice slice-1 -m claude-opus-4-6 &
 wait
 ```
 
@@ -141,10 +145,11 @@ wait
 
 1. Parse plan file path and derive `{plan-name}`
 2. Set `RUNS_ROOT=$RUNS_DIR/plans/{plan-name}` and `PLAN_ROOT=$SESSION_DIR/plans/{plan-name}`
-3. Create runtime directories:
+3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all subagent `--slice` calls inherit this automatically
+4. Create runtime directories:
    - `mkdir -p "$RUNS_ROOT"/{scratch/code/smoke,logs/agent-runs,slices}`
    - `mkdir -p "$PLAN_ROOT"/{handoffs,commits,slices}`
-4. Read the plan to understand scope, phases, and slices
+5. Read the plan to understand scope, phases, and slices
 
 ### Step 2: Plan Slice
 
@@ -161,8 +166,7 @@ Read the output slice file. If it contains `ALL_DONE`, the plan is complete — 
 ### Step 3: Implement
 
 ```bash
-run-agent/scripts/run-agent.sh implement \
-    -v SLICE_FILE=$SLICE_ROOT/slice.md
+run-agent/scripts/run-agent.sh implement --slice {slice-name}
 ```
 
 After: read the agent output log and slice file for completion notes.
@@ -170,8 +174,7 @@ After: read the agent output log and slice file for completion notes.
 ### Step 4: Review
 
 ```bash
-run-agent/scripts/run-agent.sh review \
-    -v SLICES_DIR=$SLICE_ROOT
+run-agent/scripts/run-agent.sh review --slice {slice-name}
 ```
 
 The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. For parallel multi-model review, launch multiple agents with different `-m` overrides — PID-based log dirs keep them separate automatically. After all return, synthesize findings.
@@ -185,18 +188,10 @@ run-agent/scripts/run-agent.sh commit \
     -v BREADCRUMBS="$SLICE_ROOT/slice.md"
 ```
 
-After commit, save a record:
+After commit, record it:
 
 ```bash
-HASH=$(git log -1 --format="%h")
-SUBJECT=$(git log -1 --format="%s")
-SEQ=$(ls "$PLAN_ROOT/commits/" 2>/dev/null | wc -l)
-SEQ=$((SEQ + 1))
-cat > "$PLAN_ROOT/commits/$(printf '%03d' $SEQ)-${HASH}.md" <<EOF
-**Commit:** $HASH $SUBJECT
-**Date:** $(date -u +"%Y-%m-%d %H:%M UTC")
-**Slice:** {slice-name}
-EOF
+run-agent/scripts/record-commit.sh --plan {plan-name} --slice {slice-name}
 ```
 
 ### Step 6: Handoff Snapshot

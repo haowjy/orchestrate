@@ -4,7 +4,7 @@
 #
 # Usage:
 #   scripts/run-agent.sh [agent] [OPTIONS]
-#   scripts/run-agent.sh --model gpt-5.3-codex --skills review -p "Review the changes"
+#   scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
 #   scripts/run-agent.sh review --dry-run
 #
 # See the run-agent skill README.md for full documentation.
@@ -28,6 +28,10 @@ SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
+# Default fallback when the routed CLI isn't available.
+FALLBACK_CLI="codex"
+FALLBACK_MODEL="gpt-5.3-codex"
+
 MODEL=""
 EFFORT="high"
 TOOLS="Read,Edit,Write,Bash,Glob,Grep"
@@ -45,6 +49,8 @@ HAS_VARS=false
 MODEL_FROM_CLI=false
 EFFORT_FROM_CLI=false
 TOOLS_FROM_CLI=false
+PLAN_NAME=""         # --plan shorthand
+SLICE_NAME=""        # --slice shorthand
 
 # CLI_CMD_ARGV — populated by build_cli_command() in lib/exec.sh
 declare -a CLI_CMD_ARGV=()

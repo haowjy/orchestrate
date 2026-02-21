@@ -62,18 +62,29 @@ build_cli_command() {
   local tool
   local normalized_tools
 
-  # ORCHESTRATE_DEFAULT_CLI forces all model routing to a specific CLI.
-  # Useful when you want all agents to run through one tool regardless of model name.
-  # Example: ORCHESTRATE_DEFAULT_CLI=claude forces even gpt-* models to route through claude.
+  # Route model → CLI automatically: claude-* → claude, gpt-* → codex, else → opencode.
+  # ORCHESTRATE_DEFAULT_CLI can override this if set (e.g., force all to claude).
   if [[ -n "${ORCHESTRATE_DEFAULT_CLI:-}" ]]; then
     tool="$ORCHESTRATE_DEFAULT_CLI"
   else
-    tool=$(route_model "$MODEL") || exit 1
+    tool="$(route_model "$MODEL" 2>/dev/null || echo "")"
   fi
 
-  # Pre-flight: verify the CLI binary exists before building the command.
+  # If route_model failed (unknown family) or CLI binary not installed, fall back:
+  # try the routed CLI first, then fall back to claude + FALLBACK_MODEL.
+  if [[ -z "$tool" ]]; then
+    echo "[run-agent] WARNING: Unknown model family '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
+    tool="$FALLBACK_CLI"
+    MODEL="$FALLBACK_MODEL"
+  elif ! command -v "$tool" >/dev/null 2>&1; then
+    echo "[run-agent] WARNING: '$tool' CLI not found for model '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
+    tool="$FALLBACK_CLI"
+    MODEL="$FALLBACK_MODEL"
+  fi
+
+  # Final check: the fallback CLI itself must exist.
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "ERROR: '$tool' CLI not found (needed for model $MODEL). Install $tool or try a different model with -m." >&2
+    echo "ERROR: '$tool' CLI not found. Install it or try a different model with -m." >&2
     return 1
   fi
 
@@ -141,7 +152,7 @@ do_dry_run() {
   echo "═══ DRY RUN ═══"
   echo ""
   echo "── Agent: ${AGENT_NAME:-ad-hoc}"
-  echo "── Model: $MODEL (${ORCHESTRATE_DEFAULT_CLI:-$(route_model "$MODEL")})"
+  echo "── Model: $MODEL ($(route_model "$MODEL" 2>/dev/null || echo "fallback"))"
   echo "── Effort: $EFFORT"
   echo "── Tools: $TOOLS"
   echo "── Report: $DETAIL"
@@ -162,6 +173,21 @@ do_dry_run() {
 
 # ─── Execute ─────────────────────────────────────────────────────────────────
 
+auto_create_scope_dirs() {
+  # Auto-create scratch and log directories under the scope root so that
+  # agents and orchestrators don't have to mkdir manually before launching.
+  local scope_root
+  scope_root="$(infer_scope_root)"
+
+  # Guard: never create dirs at filesystem root.
+  if [[ -z "$scope_root" || "$scope_root" == "/" ]]; then
+    return
+  fi
+
+  mkdir -p "$scope_root/scratch/code/smoke" 2>/dev/null || true
+  mkdir -p "$scope_root/logs/agent-runs" 2>/dev/null || true
+}
+
 do_execute() {
   local cli_display
   cli_display="$(format_cli_cmd)"
@@ -169,6 +195,9 @@ do_execute() {
   # Set up logging (always on)
   setup_logging
   write_log_params "$cli_display"
+
+  # Auto-create scope directories (scratch, logs) so agents don't fail on missing dirs.
+  auto_create_scope_dirs
 
   # Append report instruction now that LOG_DIR is known
   COMPOSED_PROMPT+="$(build_report_instruction "$LOG_DIR/report.md" "$DETAIL")"
@@ -178,10 +207,15 @@ do_execute() {
 
   echo "[run-agent] Agent: ${AGENT_NAME:-ad-hoc} | Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
 
-  # Execute via argv array — no eval needed
+  # Execute via argv array — no eval needed.
+  # stdout → output.json (structured JSON), stderr → tee to terminal + stderr.log.
+  # All three CLIs (claude, codex, opencode) send progress to stderr and structured
+  # output to stdout, so this streams progress in real-time while keeping output.json clean.
   cd "$WORK_DIR"
   set +e
-  "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" > "$LOG_DIR/output.json" 2>&1
+  "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
+    > "$LOG_DIR/output.json" \
+    2> >(tee "$LOG_DIR/stderr.log" >&2)
   EXIT_CODE=$?
   set -e
 
@@ -191,9 +225,25 @@ do_execute() {
   # Append to orchestrate session index
   update_session_index
 
-  # Output report to stdout if it was written by the subagent
-  if [[ -f "$LOG_DIR/report.md" ]]; then
+  # ── Report output ──────────────────────────────────────────────────────────
+  # Always print report to stdout so the orchestrator can read it.
+  # If the subagent wrote report.md, cat it. Otherwise, emit a diagnostic
+  # summary so the caller never gets silent zero output.
+  if [[ -f "$LOG_DIR/report.md" ]] && [[ -s "$LOG_DIR/report.md" ]]; then
     cat "$LOG_DIR/report.md"
+  else
+    echo "---" >&2
+    echo "[run-agent] WARNING: Agent did not produce a report at $LOG_DIR/report.md" >&2
+    echo "[run-agent] Exit code: $EXIT_CODE" >&2
+    echo "[run-agent] Output log: $LOG_DIR/output.json" >&2
+    # Print the last 40 lines of output.json to stderr for diagnostics.
+    if [[ -f "$LOG_DIR/output.json" ]] && [[ -s "$LOG_DIR/output.json" ]]; then
+      echo "[run-agent] Last 40 lines of output:" >&2
+      tail -n 40 "$LOG_DIR/output.json" >&2
+    else
+      echo "[run-agent] Output log is empty — the CLI may have failed to start." >&2
+    fi
+    echo "---" >&2
   fi
 
   echo "[run-agent] Done (exit=$EXIT_CODE). Log: $LOG_DIR" >&2

@@ -12,7 +12,13 @@ resolve_repo_or_work_path() {
     return
   fi
 
-  # Prefer an existing path under WORK_DIR, then REPO_ROOT.
+  # Prefer an existing path under RUNS_DIR (shortest paths), then WORK_DIR, then REPO_ROOT.
+  # This lets callers write e.g. "plans/my-plan/slices/my-slice/slice.md" instead of the
+  # full ".claude/skills/run-agent/.runs/plans/..." path.
+  if [[ -e "$RUNS_DIR/$path" ]]; then
+    echo "$RUNS_DIR/$path"
+    return
+  fi
   if [[ -e "$WORK_DIR/$path" ]]; then
     echo "$WORK_DIR/$path"
     return
@@ -109,6 +115,17 @@ setup_logging() {
   if [[ -z "${LOG_DIR:-}" ]]; then
     local scope_root
     scope_root="$(infer_scope_root)"
+
+    # Guard: scope_root must not be "/" or empty — that would cause mkdir at filesystem root.
+    # This usually means a required variable (SLICE_FILE, SLICES_DIR, etc.) was empty or
+    # resolved to a root-level path, which is always a caller bug.
+    if [[ -z "$scope_root" || "$scope_root" == "/" ]]; then
+      echo "ERROR: scope_root resolved to '${scope_root:-<empty>}' — refusing to create log dirs at filesystem root." >&2
+      echo "  This usually means a required variable (SLICE_FILE, SLICES_DIR, PLAN_FILE) is empty or invalid." >&2
+      echo "  Check that -v KEY=VALUE arguments have non-empty values." >&2
+      exit 1
+    fi
+
     # Append PID for parallel safety — multiple runs of the same agent get separate dirs.
     LOG_DIR="$scope_root/logs/agent-runs/${label}-$$"
   fi

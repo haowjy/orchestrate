@@ -22,15 +22,21 @@ run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
 # Dry run — see composed prompt + CLI command without executing
 run-agent/scripts/run-agent.sh review --dry-run
 
-# With template variables
+# With template variables (long form)
 run-agent/scripts/run-agent.sh implement -v SLICE_FILE=$RUNS_DIR/plans/my-plan/slices/slice-1/slice.md
+
+# With --plan/--slice shorthand (equivalent to the above)
+run-agent/scripts/run-agent.sh implement --plan my-plan --slice slice-1
+
+# --slice alone when ORCHESTRATE_PLAN is set by orchestrator
+run-agent/scripts/run-agent.sh implement --slice slice-1
 
 # Brief report (default: standard)
 run-agent/scripts/run-agent.sh review -D brief
 
 # Pass reference files (appended as "Reference Files" section in prompt)
 run-agent/scripts/run-agent.sh implement \
-    -v SLICE_FILE=path/to/slice.md \
+    --plan my-plan --slice slice-1 \
     -f path/to/extra-context.md
 ```
 
@@ -44,10 +50,32 @@ Every run appends a report instruction to the prompt. The subagent writes `repor
 | `standard` | (default) Decisions, files, verification, issues |
 | `detailed` | Thorough: reasoning, all files, full verification, recommendations |
 
+## Plan/Slice Shorthand
+
+`--plan NAME` and `--slice NAME` expand to the standard template variables:
+
+| Flags | Equivalent `-v` |
+|-------|-----------------|
+| `--plan X` | `PLAN_FILE=plans/X/plan.md` |
+| `--plan X --slice Y` | `SLICE_FILE=plans/X/slices/Y/slice.md`, `SLICES_DIR=plans/X/slices/Y` |
+
+Rules:
+- Explicit `-v` always wins (shorthand only sets vars that aren't already set)
+- `--slice` without `--plan` requires `ORCHESTRATE_PLAN` env var
+- `ORCHESTRATE_PLAN` env var provides a default plan name (set once by orchestrator, inherited by all subagents)
+
+## Helper Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/record-commit.sh --plan NAME [--slice NAME] [--update-handoff]` | Record latest commit + optionally update handoff |
+| `scripts/log-inspect.sh <output.json> [summary\|tools\|errors\|files]` | Inspect agent run logs without loading into context |
+
 ## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `ORCHESTRATE_PLAN` | Default plan name for `--slice` shorthand | unset |
 | `ORCHESTRATE_DEFAULT_CLI` | Force all model routing to a specific CLI (`claude`, `codex`, `opencode`) | Auto-detect from model name |
 | `ORCHESTRATE_AGENT_DIR` | Override agent definition directory | unset |
 
@@ -114,7 +142,8 @@ Each run writes to `{scope-root}/logs/agent-runs/{agent-name}-{PID}/`:
 
 - `params.json` — run parameters
 - `input.md` — composed prompt
-- `output.json` — raw CLI output
+- `output.json` — raw CLI output (stdout only)
+- `stderr.log` — CLI progress/diagnostics (also streamed to terminal in real-time)
 - `report.md` — written by the subagent (the orchestrator reads this)
 - `files-touched.txt` — derived from `output.json`
 

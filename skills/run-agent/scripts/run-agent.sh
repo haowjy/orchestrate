@@ -54,6 +54,8 @@ SLICE_NAME=""        # --slice shorthand
 
 # CLI_CMD_ARGV — populated by build_cli_command() in lib/exec.sh
 declare -a CLI_CMD_ARGV=()
+# CLI_HARNESS — populated by build_cli_command() in lib/exec.sh (claude|codex|opencode)
+CLI_HARNESS=""
 
 # ─── Source Modules ──────────────────────────────────────────────────────────
 

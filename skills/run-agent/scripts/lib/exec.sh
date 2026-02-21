@@ -89,21 +89,24 @@ build_cli_command() {
   fi
 
   CLI_CMD_ARGV=()
+  CLI_HARNESS="$tool"
   normalized_tools="$(normalize_tools_for_harness "$tool" "$TOOLS")"
   case "$tool" in
     claude)
       # CLAUDECODE= unsets nested session check (env sets it for the subprocess)
-      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --output-format json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
+      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
       ;;
     codex)
-      CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --full-auto --json -)
+      CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
       ;;
     opencode)
-      # opencode takes message as positional args (or reads from stdin via process substitution).
+      # opencode --format json emits structured JSON events on stdout.
+      # --print-logs mirrors progress/diagnostics to stderr for real-time visibility.
+      # Prompt text is passed as a positional arg at execution time.
       # --variant maps effort levels. No tool allowlist support.
       local effective_model
       effective_model="$(strip_model_prefix "$MODEL")"
-      CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --variant "$EFFORT")
+      CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --print-logs --variant "$EFFORT")
       ;;
     *)
       echo "ERROR: Unsupported CLI harness: $tool" >&2
@@ -208,14 +211,19 @@ do_execute() {
   echo "[run-agent] Agent: ${AGENT_NAME:-ad-hoc} | Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
 
   # Execute via argv array — no eval needed.
-  # stdout → output.json (structured JSON), stderr → tee to terminal + stderr.log.
-  # All three CLIs (claude, codex, opencode) send progress to stderr and structured
-  # output to stdout, so this streams progress in real-time while keeping output.json clean.
+  # stdout → output.json (structured JSON/JSONL), stderr → tee to terminal + stderr.log.
+  # Claude/Codex read prompt from stdin; OpenCode takes prompt as positional arg.
   cd "$WORK_DIR"
   set +e
-  "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
-    > "$LOG_DIR/output.json" \
-    2> >(tee "$LOG_DIR/stderr.log" >&2)
+  if [[ "$CLI_HARNESS" == "opencode" ]]; then
+    "${CLI_CMD_ARGV[@]}" "$COMPOSED_PROMPT" \
+      > "$LOG_DIR/output.json" \
+      2> >(tee "$LOG_DIR/stderr.log" >&2)
+  else
+    "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
+      > "$LOG_DIR/output.json" \
+      2> >(tee "$LOG_DIR/stderr.log" >&2)
+  fi
   EXIT_CODE=$?
   set -e
 

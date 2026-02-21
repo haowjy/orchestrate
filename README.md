@@ -372,7 +372,7 @@ Every agent run is logged under `run-agent/.runs/`, with coordination state unde
 
 `run-agent.sh` launches each harness in autonomous mode:
 - Claude CLI uses `--dangerously-skip-permissions`
-- Codex CLI uses `--full-auto`
+- Codex CLI uses `--dangerously-bypass-approvals-and-sandbox`
 
 Tool allowlists are currently applied only for Claude (`--allowedTools`). Codex and OpenCode do not expose equivalent allowlist flags in `exec/run`.
 

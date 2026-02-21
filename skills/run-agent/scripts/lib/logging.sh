@@ -12,6 +12,14 @@ resolve_repo_or_work_path() {
     return
   fi
 
+  # Runtime scope shorthand should always resolve under RUNS_DIR, even when
+  # the path doesn't exist yet. This prevents accidental writes to repo-root
+  # paths like ./plans/* when callers use plan/slice shorthand.
+  if [[ "$path" == plans/* || "$path" == project/* ]]; then
+    echo "$RUNS_DIR/$path"
+    return
+  fi
+
   # Prefer an existing path under RUNS_DIR (shortest paths), then WORK_DIR, then REPO_ROOT.
   # This lets callers write e.g. "plans/my-plan/slices/my-slice/slice.md" instead of the
   # full ".claude/skills/run-agent/.runs/plans/..." path.
@@ -43,6 +51,14 @@ path_dir_or_self() {
 
 derive_plan_root_from_plan_file() {
   local plan_file="$1"
+
+  # If PLAN_FILE already points inside RUNS_DIR/plans, preserve that exact
+  # runtime plan root instead of collapsing to basename "plan".
+  if [[ "$plan_file" == "$RUNS_DIR"/plans/*/plan.md ]]; then
+    dirname -- "$plan_file"
+    return
+  fi
+
   local base
   base="$(basename -- "$plan_file")"
   base="${base%.md}"

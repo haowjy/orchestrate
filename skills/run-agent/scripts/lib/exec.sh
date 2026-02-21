@@ -94,7 +94,7 @@ build_cli_command() {
   case "$tool" in
     claude)
       # CLAUDECODE= unsets nested session check (env sets it for the subprocess)
-      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
+      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --verbose --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
       ;;
     codex)
       CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)

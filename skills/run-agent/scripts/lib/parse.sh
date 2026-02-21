@@ -19,7 +19,7 @@ Options:
   -v, --var KEY=VALUE  Template variable substitution (repeatable)
   -f, --file PATH      Reference file/dir to list in prompt (repeatable)
   -D, --detail LEVEL   Report detail level: brief | standard | detailed (default: standard)
-      --plan NAME      Shorthand: sets PLAN_FILE=plans/NAME/plan.md
+      --plan NAME      Shorthand: sets PLAN_FILE=$RUNS_DIR/plans/NAME/plan.md
       --slice NAME     Shorthand: sets SLICE_FILE + SLICES_DIR (requires --plan)
       --dry-run        Print composed prompt + CLI command, don't execute
   -C, --cd DIR         Working directory for subprocess
@@ -282,20 +282,20 @@ expand_plan_slice_shorthand() {
 
   [[ -z "$PLAN_NAME" ]] && return
 
-  # --plan X → PLAN_FILE=plans/X/plan.md (explicit -v wins)
+  # --plan X → PLAN_FILE=$RUNS_DIR/plans/X/plan.md (explicit -v wins)
   if [[ -z "${VARS[PLAN_FILE]:-}" ]]; then
-    VARS[PLAN_FILE]="plans/$PLAN_NAME/plan.md"
+    VARS[PLAN_FILE]="$RUNS_DIR/plans/$PLAN_NAME/plan.md"
     HAS_VARS=true
   fi
 
   # --plan X --slice Y → SLICE_FILE + SLICES_DIR (explicit -v wins)
   if [[ -n "$SLICE_NAME" ]]; then
     if [[ -z "${VARS[SLICE_FILE]:-}" ]]; then
-      VARS[SLICE_FILE]="plans/$PLAN_NAME/slices/$SLICE_NAME/slice.md"
+      VARS[SLICE_FILE]="$RUNS_DIR/plans/$PLAN_NAME/slices/$SLICE_NAME/slice.md"
       HAS_VARS=true
     fi
     if [[ -z "${VARS[SLICES_DIR]:-}" ]]; then
-      VARS[SLICES_DIR]="plans/$PLAN_NAME/slices/$SLICE_NAME"
+      VARS[SLICES_DIR]="$RUNS_DIR/plans/$PLAN_NAME/slices/$SLICE_NAME"
       HAS_VARS=true
     fi
   fi

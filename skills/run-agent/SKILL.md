@@ -56,8 +56,8 @@ Every run appends a report instruction to the prompt. The subagent writes `repor
 
 | Flags | Equivalent `-v` |
 |-------|-----------------|
-| `--plan X` | `PLAN_FILE=plans/X/plan.md` |
-| `--plan X --slice Y` | `SLICE_FILE=plans/X/slices/Y/slice.md`, `SLICES_DIR=plans/X/slices/Y` |
+| `--plan X` | `PLAN_FILE=$RUNS_DIR/plans/X/plan.md` |
+| `--plan X --slice Y` | `SLICE_FILE=$RUNS_DIR/plans/X/slices/Y/slice.md`, `SLICES_DIR=$RUNS_DIR/plans/X/slices/Y` |
 
 Rules:
 - Explicit `-v` always wins (shorthand only sets vars that aren't already set)
@@ -99,7 +99,7 @@ When an agent needs to work with a plan, slice, or reference material, use the r
 
 | Mechanism | When to use | Example |
 |-----------|-------------|---------|
-| `-v PLAN_FILE=<path>` | Agent has `{{PLAN_FILE}}` template var (research, plan-slice, review) | `-v PLAN_FILE=plans/my-plan.md` |
+| `-v PLAN_FILE=<path>` | Agent has `{{PLAN_FILE}}` template var (research, plan-slice, review) | `-v PLAN_FILE=$RUNS_DIR/plans/my-plan/plan.md` |
 | `-v SLICE_FILE=<path>` | Agent has `{{SLICE_FILE}}` template var (implement, review, commit) | `--slice slice-1` (shorthand) |
 | `-f <path>` | Extra context files appended to prompt (no template var needed) | `-f path/to/reference.md` |
 | `-p "..."` | Ad-hoc prompt text | `-p "Review auth changes"` |

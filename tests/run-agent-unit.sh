@@ -189,6 +189,59 @@ test_session_index_written() {
   assert_contains "$last_line" " | " "index.log should be pipe-delimited"
 }
 
+test_plan_slice_shorthand_uses_runs_dir_scope() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-plan-slice-scope"
+  mkdir -p "$workdir"
+
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  local runs_dir="$skills_dir/run-agent/.runs"
+
+  ORCHESTRATE_DEFAULT_CLI=codex \
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan --slice unit-slice -C "$workdir" >/dev/null 2>&1
+
+  [[ -d "$runs_dir/plans/unit-plan/slices/unit-slice/logs/agent-runs" ]] || \
+    fail "plan/slice shorthand should scope logs under run-agent/.runs/plans"
+  [[ ! -d "$workdir/plans" ]] || \
+    fail "plan/slice shorthand should not create plans/ under caller working directory"
+}
+
+test_plan_shorthand_preserves_plan_name() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-plan-scope"
+  mkdir -p "$workdir"
+
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  local runs_dir="$skills_dir/run-agent/.runs"
+
+  ORCHESTRATE_DEFAULT_CLI=codex \
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan-only -C "$workdir" >/dev/null 2>&1
+
+  [[ -d "$runs_dir/plans/unit-plan-only/logs/agent-runs" ]] || \
+    fail "--plan shorthand should scope logs under run-agent/.runs/plans/<plan-name>"
+}
+
+test_scope_root_template_var_injected() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-scope-root-var"
+  mkdir -p "$workdir"
+
+  local skills_dir
+  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
+  local expected_scope="$skills_dir/run-agent/.runs/project"
+
+  local output
+  output="$(
+    PATH="$test_tmp/bin:$PATH" "$RUNNER" research --dry-run -C "$workdir"
+  )"
+
+  assert_contains "$output" "$expected_scope/scratch/research.md" "research prompt should resolve SCOPE_ROOT under run-agent/.runs/project"
+}
+
 main() {
   local test_tmp
   test_tmp="$(mktemp -d)"
@@ -203,6 +256,9 @@ main() {
   test_claude_tool_normalization "$test_tmp"
   test_log_label_sanitized_with_pid "$test_tmp"
   test_session_index_written "$test_tmp"
+  test_plan_slice_shorthand_uses_runs_dir_scope "$test_tmp"
+  test_plan_shorthand_preserves_plan_name "$test_tmp"
+  test_scope_root_template_var_injected "$test_tmp"
 
   echo "PASS: run-agent script unit tests"
 }

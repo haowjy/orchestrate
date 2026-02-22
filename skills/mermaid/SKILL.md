@@ -70,16 +70,25 @@ A["Step complete ✓"] --> B
 A[Step ✓] --> B
 ```
 
-### 6. Use dark-mode compatible colors
+### 6. Do not hardcode colors — rely on Mermaid's built-in themes
+
+Hardcoded `style` / `classDef` colors override Mermaid's theme engine and break when switching between light and dark mode. Let the built-in `dark` / `default` themes handle node colors.
 
 ```mermaid
-%% ✅ GOOD — visible on both light and dark
-style A fill:#2d7d2d,color:#fff
-style B fill:#1a5276,color:#fff
+%% ✅ GOOD — no hardcoded colors, theme handles it
+A[Service] --> B[Database]
 
-%% ❌ BAD — light pastels invisible on dark backgrounds
-style A fill:#90EE90
-style B fill:#ADD8E6
+%% ❌ BAD — hardcoded fill/color overrides theme
+style A fill:#2d7d2d,color:#fff
+classDef foo fill:#1a5276,color:#fff
+```
+
+For sequence diagram `rect` grouping, use near-transparent fills so they work in both themes:
+
+```
+rect rgba(128, 128, 128, 0.08)
+    Note over A,B: Phase label
+end
 ```
 
 ### 7. Semicolons in sequence diagrams

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # install.sh — post-clone/submodule setup for orchestrate
 #
-# Assumes orchestrate is already at orchestrate/ (via clone or submodule).
-# Copies skills into .agents/skills/ and .claude/skills/.
+# Copies skills into .agents/skills/ and .claude/skills/ under the workspace root.
+# Rewrites runner paths in copied skills to match where orchestrate is installed.
 #
 # On first run: copies all skill directories.
 # On re-run: overwrites orchestrate-defined files, preserves user additions.
@@ -10,15 +10,22 @@
 # Usage:
 #   bash orchestrate/install.sh [OPTIONS]
 #
+# Options:
+#   --workspace DIR   Project root (default: auto-detect from git root)
 #
 # Safe to re-run (idempotent). User-added files are never deleted.
 
 set -euo pipefail
 
+WORKSPACE=""
+
 # --- Parse arguments ---
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --workspace)
+      WORKSPACE="$2"; shift 2
+      ;;
     -h|--help)
       sed -n '2,/^$/{ s/^# //; s/^#$//; p }' "$0"
       exit 0
@@ -33,30 +40,40 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Find git root of the *parent* project (not orchestrate's own repo)
-find_project_root() {
-  local dir="$SCRIPT_DIR"
-  while [[ "$dir" != "/" ]]; do
-    if [[ -d "$dir/.git" || -f "$dir/.git" ]]; then
-      # Skip orchestrate's own git root
-      if [[ "$dir" != "$SCRIPT_DIR" ]]; then
-        echo "$dir"
-        return 0
+if [[ -n "$WORKSPACE" ]]; then
+  PROJECT_ROOT="$(cd "$WORKSPACE" && pwd)"
+else
+  # Find git root of the *parent* project (not orchestrate's own repo)
+  find_project_root() {
+    local dir="$SCRIPT_DIR"
+    while [[ "$dir" != "/" ]]; do
+      if [[ -d "$dir/.git" || -f "$dir/.git" ]]; then
+        # Skip orchestrate's own git root
+        if [[ "$dir" != "$SCRIPT_DIR" ]]; then
+          echo "$dir"
+          return 0
+        fi
       fi
-    fi
-    dir="$(dirname "$dir")"
-  done
-  return 1
-}
+      dir="$(dirname "$dir")"
+    done
+    return 1
+  }
 
-PROJECT_ROOT="$(find_project_root)" || {
-  echo "Error: Could not find parent project git root."
-  echo "Make sure orchestrate is inside a git repository at orchestrate/"
-  exit 1
-}
+  PROJECT_ROOT="$(find_project_root)" || {
+    echo "Error: Could not find parent project git root." >&2
+    echo "Use --workspace DIR to specify the project root." >&2
+    exit 1
+  }
+fi
 
 ORCHESTRATE_DIR="$SCRIPT_DIR"
 SKILLS_SRC="$ORCHESTRATE_DIR/skills"
+
+# Relative path from workspace to orchestrate (e.g. "orchestrate", "tools/orchestrate")
+ORCH_REL="${ORCHESTRATE_DIR#$PROJECT_ROOT/}"
+
+echo "Workspace: $PROJECT_ROOT"
+echo "Orchestrate: $ORCH_REL/"
 
 # --- Copy targets ---
 
@@ -102,6 +119,17 @@ copy_skills() {
 echo "Installing skills..."
 copy_skills "$AGENTS_SKILLS"
 copy_skills "$CLAUDE_SKILLS"
+
+# --- Rewrite runner paths to match install location ---
+
+if [[ "$ORCH_REL" != "orchestrate" ]]; then
+  echo "Rewriting runner paths: orchestrate/ -> $ORCH_REL/"
+  for dir in "$AGENTS_SKILLS" "$CLAUDE_SKILLS"; do
+    while IFS= read -r -d '' file; do
+      sed -i "s|orchestrate/skills/run-agent/scripts|${ORCH_REL}/skills/run-agent/scripts|g" "$file"
+    done < <(find "$dir" -name '*.md' -print0 -o -name '*.sh' -print0)
+  done
+fi
 
 # --- Summary ---
 

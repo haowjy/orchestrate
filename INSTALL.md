@@ -22,19 +22,13 @@ git submodule add https://github.com/haowjy/orchestrate orchestrate
 
 ```bash
 git clone https://github.com/haowjy/orchestrate orchestrate
+echo 'orchestrate/' >> .gitignore
 ```
 
 ## Step 2: Run setup
 
 ```bash
 bash orchestrate/install.sh
-```
-
-The script auto-detects whether you used submodule or clone. To override:
-
-```bash
-bash orchestrate/install.sh --method submodule
-bash orchestrate/install.sh --method clone
 ```
 
 ## Step 3: Verify

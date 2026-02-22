@@ -177,6 +177,6 @@ Log directories are auto-derived from scope variables (`SLICE_FILE`, `SLICES_DIR
 
 Where `$RUNS_DIR` is `{skills-dir}/run-agent/.runs/`.
 
-For any scope root: `{scope-root}/scratch/`, `{scope-root}/scratch/code/smoke/`, `{scope-root}/logs/agent-runs/`
+For any scope root: `{scope-root}/.scratch/`, `{scope-root}/.scratch/code/smoke/`, `{scope-root}/logs/agent-runs/`
 
 Parallel runs are safe by default — each run appends its PID to the log directory name.

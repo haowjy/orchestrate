@@ -25,4 +25,4 @@ You are a research agent. Your job is to deeply understand the problem, explore 
 
 ## Output
 
-Write findings to your report (report.md — auto-created by run-agent). For detailed notes, also write to `{{SCOPE_ROOT}}/scratch/research.md`.
+Write findings to your report (report.md — auto-created by run-agent). For detailed notes, also write to `{{SCOPE_ROOT}}/.scratch/research.md`.

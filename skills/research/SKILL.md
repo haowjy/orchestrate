@@ -47,7 +47,7 @@ Identify 2-3 viable approaches and evaluate each:
 
 ### Step 5: Write Research Notes
 
-Write structured research notes to `{SCOPE_ROOT}/scratch/research-{variant}.md` where `{variant}` identifies your agent (e.g., `claude`, `codex`).
+Write structured research notes to `{{SCOPE_ROOT}}/.scratch/research-{variant}.md` where `{variant}` identifies your agent (e.g., `claude`, `codex`).
 
 ```markdown
 # Research Notes — {topic}

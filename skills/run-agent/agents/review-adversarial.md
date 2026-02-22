@@ -21,7 +21,7 @@ Determine your review mode from available inputs:
 
 ## Scratch Directory
 
-Write all test/scratch code to: `{{SLICES_DIR}}/scratch/code/smoke/`
+Write all test/scratch code to: `{{SLICES_DIR}}/.scratch/code/smoke/`
 
 Create this directory if it doesn't exist. **Never modify source files** — only create new scratch files.
 
@@ -48,7 +48,7 @@ When attacking implemented code:
    - **Concurrency bugs**: deadlocks, lost updates, stale reads
    - **Malformed input**: invalid JSON, missing fields, wrong types, null where unexpected
 4. **Write scratch tests** to prove issues:
-   - Save to `{{SLICES_DIR}}/scratch/code/smoke/test-*.sh` or `test-*.ts` or `test-*.go` etc.
+   - Save to `{{SLICES_DIR}}/.scratch/code/smoke/test-*.sh` or `test-*.ts` or `test-*.go` etc.
    - Each test should be runnable and demonstrate a specific issue.
    - Run the tests and include the output in your findings.
 5. **Apply the review rules** from the loaded review skill.

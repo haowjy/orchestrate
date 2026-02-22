@@ -77,7 +77,7 @@ init_work_dir() {
 }
 
 init_dirs() {
-  mkdir -p "$RUNS_DIR/project"/{scratch/code/smoke,logs/agent-runs}
+  mkdir -p "$RUNS_DIR/project"/{.scratch/code/smoke,logs/agent-runs}
   mkdir -p "$SESSION_DIR/project"
 }
 

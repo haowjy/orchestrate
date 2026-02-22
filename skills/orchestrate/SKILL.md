@@ -52,11 +52,11 @@ Runtime artifacts are split between two directories — raw per-run artifacts in
 │   │   ├── output.json
 │   │   ├── report.md
 │   │   └── files-touched.txt
-│   └── scratch/code/smoke/
+│   └── .scratch/code/smoke/
 └── plans/{plan-name}/
     └── slices/{slice-name}/
         ├── logs/agent-runs/{agent}-{PID}/
-        └── scratch/code/smoke/
+        └── .scratch/code/smoke/
 
 {skills-dir}/orchestrate/.session/               # coordination state
 ├── project/
@@ -147,7 +147,7 @@ wait
 2. Set `RUNS_ROOT=$RUNS_DIR/plans/{plan-name}` and `PLAN_ROOT=$SESSION_DIR/plans/{plan-name}`
 3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all subagent `--slice` calls inherit this automatically
 4. Create runtime directories:
-   - `mkdir -p "$RUNS_ROOT"/{scratch/code/smoke,logs/agent-runs,slices}`
+   - `mkdir -p "$RUNS_ROOT"/{.scratch/code/smoke,logs/agent-runs,slices}`
    - `mkdir -p "$PLAN_ROOT"/{handoffs,commits,slices}`
 5. Read the plan to understand scope, phases, and slices
 

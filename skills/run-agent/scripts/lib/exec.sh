@@ -224,7 +224,7 @@ auto_create_scope_dirs() {
     return
   fi
 
-  mkdir -p "$scope_root/scratch/code/smoke" 2>/dev/null || true
+  mkdir -p "$scope_root/.scratch/code/smoke" 2>/dev/null || true
   mkdir -p "$scope_root/logs/agent-runs" 2>/dev/null || true
 }
 

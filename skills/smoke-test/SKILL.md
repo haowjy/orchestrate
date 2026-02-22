@@ -8,7 +8,7 @@ user-invocable: false
 
 Smoke tests are **any disposable code** used to quickly verify that something works. They are not limited to curl/HTTP probes.
 
-Store smoke tests in `scratch/code/smoke/` under the active scope root. The scope root is whichever runtime directory you are working in (project, plan, phase, or slice).
+Store smoke tests in `{{SCOPE_ROOT}}/.scratch/code/smoke/` (equivalently `.scratch/code/smoke/` inside the active scope root). The scope root is whichever runtime directory you are working in (project, plan, phase, or slice).
 
 ## What Smoke Tests Are
 
@@ -45,7 +45,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 | | Smoke tests | Unit tests |
 |---|---|---|
-| **Location** | `scratch/code/smoke/` | `tests/` or co-located `*.test.ts` |
+| **Location** | `.scratch/code/smoke/` | `tests/` or co-located `*.test.ts` |
 | **Committed** | Never | Always |
 | **Purpose** | Quick proof it works right now | Durable regression protection |
 | **Scope** | Any — logic, API, integration | Focused on specific units |

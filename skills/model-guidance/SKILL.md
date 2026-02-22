@@ -45,7 +45,7 @@ Skills are composable building blocks. Combine them to create variant behaviors 
 ### Examples
 
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 # Adversarial review — sonnet with review + smoke-test skills
 "$RUNNER" --model claude-sonnet-4-6 --skills review,smoke-test \

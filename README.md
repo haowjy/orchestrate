@@ -13,12 +13,12 @@ Orchestration state lives in one place:
 - `.orchestrate/runs/`
 - `.orchestrate/session/`
 
-The submodule at `.agents/.orchestrate/` provides scripts and baseline assets.
+The submodule at `orchestrate/` provides scripts and baseline assets.
 
 ## Core Runner
 
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 ```
 
 ## Quick Start
@@ -39,7 +39,7 @@ RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
 
 # 5) commit
 "$RUNNER" commit --plan my-plan --slice slice-1
-.agents/.orchestrate/skills/run-agent/scripts/record-commit.sh --plan my-plan --slice slice-1
+orchestrate/skills/run-agent/scripts/record-commit.sh --plan my-plan --slice slice-1
 ```
 
 ## Agent Set
@@ -108,16 +108,16 @@ Typical sync:
 
 ```bash
 # default: auto-apply when no conflicts, stop when conflicts exist
-bash .agents/.orchestrate/sync.sh pull
+bash orchestrate/sync.sh pull
 
 # quick submodule diffs
-bash .agents/.orchestrate/sync.sh pull --diff
+bash orchestrate/sync.sh pull --diff
 
 # force apply even when conflicts exist
-bash .agents/.orchestrate/sync.sh pull --overwrite
+bash orchestrate/sync.sh pull --overwrite
 
 # exclude patterns from sync/preview
-bash .agents/.orchestrate/sync.sh pull --exclude 'review/references/*'
+bash orchestrate/sync.sh pull --exclude 'review/references/*'
 ```
 
 ## Testing

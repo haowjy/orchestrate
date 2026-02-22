@@ -15,27 +15,26 @@ Ask the user one question:
 ### If submodule:
 
 ```bash
-git submodule add https://github.com/haowjy/orchestrate .agents/.orchestrate
+git submodule add https://github.com/haowjy/orchestrate orchestrate
 ```
 
 ### If clone:
 
 ```bash
-mkdir -p .agents
-git clone https://github.com/haowjy/orchestrate .agents/.orchestrate
+git clone https://github.com/haowjy/orchestrate orchestrate
 ```
 
 ## Step 2: Run setup
 
 ```bash
-bash .agents/.orchestrate/install.sh
+bash orchestrate/install.sh
 ```
 
 The script auto-detects whether you used submodule or clone. To override:
 
 ```bash
-bash .agents/.orchestrate/install.sh --method submodule
-bash .agents/.orchestrate/install.sh --method clone
+bash orchestrate/install.sh --method submodule
+bash orchestrate/install.sh --method clone
 ```
 
 ## Step 3: Verify
@@ -52,19 +51,19 @@ Both directories should contain skill directories (orchestrate, run-agent, revie
 ### If submodule:
 
 ```bash
-git submodule update --remote .agents/.orchestrate
+git submodule update --remote orchestrate
 ```
 
 ### If clone:
 
 ```bash
-cd .agents/.orchestrate && git pull && cd -
+cd orchestrate && git pull && cd -
 ```
 
 Then re-run install to update skill copies:
 
 ```bash
-bash .agents/.orchestrate/install.sh
+bash orchestrate/install.sh
 ```
 
 Re-running install overwrites shipped files but preserves any custom agents or files you added.
@@ -74,21 +73,21 @@ Re-running install overwrites shipped files but preserves any custom agents or f
 ### If submodule:
 
 ```bash
-git submodule deinit -f .agents/.orchestrate
-git rm -f .agents/.orchestrate
-rm -rf .git/modules/.agents/.orchestrate
+git submodule deinit -f orchestrate
+git rm -f orchestrate
+rm -rf .git/modules/orchestrate
 ```
 
 ### If clone:
 
 ```bash
-rm -rf .agents/.orchestrate
+rm -rf orchestrate
 ```
 
 Then remove copied skill directories:
 
 ```bash
-for skill in .agents/.orchestrate/skills/*/; do
+for skill in orchestrate/skills/*/; do
   name="$(basename "$skill")"
   rm -rf ".agents/skills/$name" ".claude/skills/$name"
 done

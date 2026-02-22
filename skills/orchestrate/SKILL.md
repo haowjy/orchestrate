@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh.
-allowed-tools: Bash(.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(.agents/.orchestrate/skills/run-agent/scripts/record-commit.sh *), Bash(.agents/.orchestrate/skills/run-agent/scripts/log-inspect.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
+allowed-tools: Bash(orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(orchestrate/skills/run-agent/scripts/record-commit.sh *), Bash(orchestrate/skills/run-agent/scripts/log-inspect.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
 ---
 
 # Orchestrate — Multi-Model Supervisor
@@ -19,7 +19,7 @@ Root: `.orchestrate/`
 
 Runner path:
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 ```
 
 ## Skill Discovery
@@ -84,7 +84,7 @@ Key flags:
 One common flow (not the only flow):
 
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 # 1. Setup — derive plan name, create runtime dirs
 PLAN_NAME="$(git branch --show-current)/$(basename "$PLAN_FILE" .md)"
@@ -116,7 +116,7 @@ wait
     -p "Stage and commit changes for this slice with a concise message."
 
 # 6. Record commit
-.agents/.orchestrate/skills/run-agent/scripts/record-commit.sh \
+orchestrate/skills/run-agent/scripts/record-commit.sh \
     --plan "$PLAN_NAME" --slice slice-1
 ```
 

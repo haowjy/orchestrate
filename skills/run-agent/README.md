@@ -7,7 +7,7 @@ Canonical runtime root: `.orchestrate/`
 ## Runner
 
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 ```
 
 ## Quick Start

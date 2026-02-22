@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # install.sh — post-clone/submodule setup for orchestrate
 #
-# Assumes orchestrate is already at .agents/.orchestrate (via clone or submodule).
+# Assumes orchestrate is already at orchestrate/ (via clone or submodule).
 # Copies skills into .agents/skills/ and .claude/skills/.
 #
 # On first run: copies all skill directories.
 # On re-run: overwrites orchestrate-defined files, preserves user additions.
 #
 # Usage:
-#   bash .agents/.orchestrate/install.sh [OPTIONS]
+#   bash orchestrate/install.sh [OPTIONS]
 #
 # Options:
 #   --method submodule|clone   How orchestrate was added (default: auto-detect)
-#                              clone: adds .agents/.orchestrate to .gitignore
+#                              clone: adds orchestrate/ to .gitignore
 #
 # Safe to re-run (idempotent). User-added files are never deleted.
 
@@ -64,7 +64,7 @@ find_project_root() {
 
 PROJECT_ROOT="$(find_project_root)" || {
   echo "Error: Could not find parent project git root."
-  echo "Make sure orchestrate is inside a git repository at .agents/.orchestrate"
+  echo "Make sure orchestrate is inside a git repository at orchestrate/"
   exit 1
 }
 
@@ -132,7 +132,7 @@ copy_skills "$CLAUDE_SKILLS"
 
 if [[ "$METHOD" == "clone" ]]; then
   GITIGNORE="$PROJECT_ROOT/.gitignore"
-  ENTRY=".agents/.orchestrate/"
+  ENTRY="orchestrate/"
   if [[ -f "$GITIGNORE" ]] && grep -qxF "$ENTRY" "$GITIGNORE"; then
     echo ".gitignore: '$ENTRY' already present"
   else

@@ -11,7 +11,7 @@ Canonical root: `.orchestrate/`
 
 Runner path:
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 ```
 
 ## Ad-Hoc Mode (Primary)

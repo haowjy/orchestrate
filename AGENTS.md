@@ -15,7 +15,7 @@ The runtime is centered on a canonical project root:
 ## Core Command
 
 ```bash
-RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 # Ad-hoc: model + skills + prompt (primary mode)
 "$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth changes"

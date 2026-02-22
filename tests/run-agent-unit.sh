@@ -71,20 +71,18 @@ test_init_dirs_created() {
   ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
 
-  # Verify run-agent/.runs/project was created
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  [[ -d "$skills_dir/run-agent/.runs/project/logs/agent-runs" ]] || fail "run-agent/.runs/project/logs/agent-runs should be created"
-  [[ -d "$skills_dir/run-agent/.runs/project/scratch/code/smoke" ]] || fail "run-agent/.runs/project/scratch/code/smoke should be created"
-  [[ -d "$skills_dir/orchestrate/.session/project" ]] || fail "orchestrate/.session/project should be created"
+  # Verify .orchestrate runtime dirs were created under the working repository root
+  [[ -d "$workdir/.orchestrate/runs/project/logs/agent-runs" ]] || fail ".orchestrate/runs/project/logs/agent-runs should be created"
+  [[ -d "$workdir/.orchestrate/runs/project/.scratch/code/smoke" ]] || fail ".orchestrate/runs/project/.scratch/code/smoke should be created"
+  [[ -d "$workdir/.orchestrate/session/project" ]] || fail ".orchestrate/session/project should be created"
 }
 
-test_project_local_agent_override() {
+test_project_local_orchestrate_agent_resolved() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-project-agent"
-  mkdir -p "$workdir/.agents/skills/run-agent/agents"
+  mkdir -p "$workdir/.orchestrate/agents"
 
-  cat > "$workdir/.agents/skills/run-agent/agents/custom.md" <<'EOF'
+  cat > "$workdir/.orchestrate/agents/custom.md" <<'EOF'
 ---
 name: custom
 description: project custom
@@ -106,9 +104,9 @@ test_env_agent_dir_takes_precedence() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-env-agent"
   local env_agents="$test_tmp/env-agents"
-  mkdir -p "$workdir/.agents/skills/run-agent/agents" "$env_agents"
+  mkdir -p "$workdir/.orchestrate/agents" "$env_agents"
 
-  cat > "$workdir/.agents/skills/run-agent/agents/custom.md" <<'EOF'
+  cat > "$workdir/.orchestrate/agents/custom.md" <<'EOF'
 ---
 name: custom
 description: project custom
@@ -150,16 +148,12 @@ test_log_label_sanitized_with_pid() {
   local workdir="$test_tmp/work-log-sanitize"
   mkdir -p "$workdir"
 
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  local runs_dir="$skills_dir/run-agent/.runs"
-
   ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model ../../tmp/x/y --prompt hi -C "$workdir" >/dev/null 2>&1
 
   local label_dir
-  label_dir="$(find "$runs_dir/project/logs/agent-runs" -mindepth 1 -maxdepth 1 -type d -name '..-..-tmp-x-y-*' | head -n 1)"
+  label_dir="$(find "$workdir/.orchestrate/runs/project/logs/agent-runs" -mindepth 1 -maxdepth 1 -type d -name '..-..-tmp-x-y-*' | head -n 1)"
   assert_file_exists "$label_dir/params.json" "sanitized log label directory with PID should exist"
   # Verify PID is appended (pattern: label-PID)
   local dirname
@@ -174,17 +168,13 @@ test_session_index_written() {
   local workdir="$test_tmp/work-session-index"
   mkdir -p "$workdir"
 
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  local session_dir="$skills_dir/orchestrate/.session"
-
   ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
 
-  assert_file_exists "$session_dir/project/index.log" "index.log should be written after a run"
+  assert_file_exists "$workdir/.orchestrate/session/project/index.log" "index.log should be written after a run"
   local last_line
-  last_line="$(tail -1 "$session_dir/project/index.log")"
+  last_line="$(tail -1 "$workdir/.orchestrate/session/project/index.log")"
   assert_contains "$last_line" "gpt-5.3-codex" "index.log should contain model name"
   assert_contains "$last_line" " | " "index.log should be pipe-delimited"
 }
@@ -194,16 +184,12 @@ test_plan_slice_shorthand_uses_runs_dir_scope() {
   local workdir="$test_tmp/work-plan-slice-scope"
   mkdir -p "$workdir"
 
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  local runs_dir="$skills_dir/run-agent/.runs"
-
   ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan --slice unit-slice -C "$workdir" >/dev/null 2>&1
 
-  [[ -d "$runs_dir/plans/unit-plan/slices/unit-slice/logs/agent-runs" ]] || \
-    fail "plan/slice shorthand should scope logs under run-agent/.runs/plans"
+  [[ -d "$workdir/.orchestrate/runs/plans/unit-plan/slices/unit-slice/logs/agent-runs" ]] || \
+    fail "plan/slice shorthand should scope logs under .orchestrate/runs/plans"
   [[ ! -d "$workdir/plans" ]] || \
     fail "plan/slice shorthand should not create plans/ under caller working directory"
 }
@@ -213,33 +199,34 @@ test_plan_shorthand_preserves_plan_name() {
   local workdir="$test_tmp/work-plan-scope"
   mkdir -p "$workdir"
 
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  local runs_dir="$skills_dir/run-agent/.runs"
-
   ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan-only -C "$workdir" >/dev/null 2>&1
 
-  [[ -d "$runs_dir/plans/unit-plan-only/logs/agent-runs" ]] || \
-    fail "--plan shorthand should scope logs under run-agent/.runs/plans/<plan-name>"
+  [[ -d "$workdir/.orchestrate/runs/plans/unit-plan-only/logs/agent-runs" ]] || \
+    fail "--plan shorthand should scope logs under .orchestrate/runs/plans/<plan-name>"
 }
 
 test_scope_root_template_var_injected() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-scope-root-var"
-  mkdir -p "$workdir"
+  mkdir -p "$workdir/.orchestrate/skills/research"
+  cat > "$workdir/.orchestrate/skills/research/SKILL.md" <<'EOF'
+---
+name: research
+description: test scope-root interpolation
+---
+Write notes to {{SCOPE_ROOT}}/.scratch/research.md
+EOF
 
-  local skills_dir
-  skills_dir="$(cd "$REPO_ROOT/skills" && pwd -P)"
-  local expected_scope="$skills_dir/run-agent/.runs/project"
+  local expected_scope="$workdir/.orchestrate/runs/project"
 
   local output
   output="$(
-    PATH="$test_tmp/bin:$PATH" "$RUNNER" research --dry-run -C "$workdir"
+    PATH="$test_tmp/bin:$PATH" "$RUNNER" --skills research --prompt hi --dry-run -C "$workdir"
   )"
 
-  assert_contains "$output" "$expected_scope/scratch/research.md" "research prompt should resolve SCOPE_ROOT under run-agent/.runs/project"
+  assert_contains "$output" "$expected_scope/.scratch/research.md" "research prompt should resolve SCOPE_ROOT under .orchestrate/runs/project"
 }
 
 main() {
@@ -251,7 +238,7 @@ main() {
 
   test_missing_option_value_is_friendly "$test_tmp"
   test_init_dirs_created "$test_tmp"
-  test_project_local_agent_override "$test_tmp"
+  test_project_local_orchestrate_agent_resolved "$test_tmp"
   test_env_agent_dir_takes_precedence "$test_tmp"
   test_claude_tool_normalization "$test_tmp"
   test_log_label_sanitized_with_pid "$test_tmp"

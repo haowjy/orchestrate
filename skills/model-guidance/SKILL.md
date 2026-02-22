@@ -1,86 +1,82 @@
 ---
 name: model-guidance
-description: Model tendencies and selection guidance for the orchestrator
+description: Model tendencies and selection guidance for orchestration decisions.
 ---
 
 # Model Guidance
 
-Reference for choosing the right agent variant. Used by the orchestrate skill when deciding which agent to launch.
+Reference for choosing the right model and skill combination. The orchestrator reads this when deciding what to launch.
 
 ## Model Tendencies
 
-| Model | Strengths | Weaknesses | Best For |
+| Model | Strong At | Weak At |
+|---|---|---|
+| `gpt-5.3-codex` | Deep multi-file implementation, exhaustive reviews, disciplined code changes | Slower and costlier on trivial tasks |
+| `claude-sonnet-4-6` | Fast iteration, UI/product polish loops, quick investigations | Less exhaustive on large cross-cutting refactors |
+| `claude-opus-4-6` | Architecture/design tradeoffs, nuanced reasoning, difficult correctness issues | Highest latency/cost among defaults |
+| `claude-haiku-4-5` | Fast commit/message tasks and lightweight transformations | Not suitable for deep implementation/review |
+
+## Task-Type Heuristics
+
+- **design**: prefer `claude-opus-4-6`, then `gpt-5.3-codex`.
+- **investigate**: prefer `gpt-5.3-codex` when root-cause depth matters; use `claude-sonnet-4-6` for faster loop.
+- **research**: use model diversity when tradeoffs are unclear. Run 2-3 models in parallel for different perspectives.
+- **plan-slice**: prefer `gpt-5.3-codex` for precise acceptance criteria.
+- **implement**: default `gpt-5.3-codex`; use `claude-sonnet-4-6` for iterative UI work. Escalate to `claude-opus-4-6` for subtle correctness issues.
+- **review**: for medium/high risk, run multiple model families.
+- **test**: prioritize reliability and reproducibility over speed.
+- **commit**: use `claude-haiku-4-5`.
+
+## Skill-Composition Patterns
+
+Skills are composable building blocks. Combine them to create variant behaviors without needing separate agent definitions:
+
+| Behavior | Model | Skills | Prompt Emphasis |
 |---|---|---|---|
-| **gpt-5.3-codex** | Deep, exhaustive code generation; strong at multi-file changes; thorough verification | Slower; higher cost | Default implementation, review, planning |
-| **claude-sonnet-4-6** | Fast iteration; good UI intuition; strong at incremental changes | Less exhaustive on large refactors | UI loops, rapid iteration, frontend tweaks |
-| **claude-opus-4-6** | Deep reasoning; careful architectural decisions; nuanced trade-offs | Slower than Sonnet; higher cost | Complex logic, architectural changes, subtle bugs |
-| **claude-haiku-4-5** | Very fast; low cost; good at straightforward tasks | Limited depth on complex reasoning | Commit messages, simple transformations |
+| **Exhaustive review** | `gpt-5.3-codex` | `review` | Default — thorough senior dev review |
+| **Adversarial review** | `claude-sonnet-4-6` | `review`, `smoke-test` | "Write scratch tests to break the code. Focus on edge cases, race conditions, and security." |
+| **Quick sanity check** | `gpt-5.3-codex` | `review` | Use `-D brief` for fast mechanical pass |
+| **Deep implementation** | `gpt-5.3-codex` | `smoke-test`, `scratchpad` | Default implementation with verification |
+| **UI iteration** | `claude-sonnet-4-6` | `smoke-test` | "Iterate rapidly. Check visual result after each change." |
+| **Deliberate implementation** | `claude-opus-4-6` | `smoke-test`, `scratchpad` | "Reason carefully about correctness. Document trade-offs." |
+| **Multi-perspective research** | mixed | `research` | Run 2-3 models in parallel, synthesize findings |
+| **Diagram-aware implementation** | any | `smoke-test`, `mermaid` | Include `mermaid` when slice involves Mermaid diagrams |
 
-## Agent Variant Selection
+### Examples
 
-### Implementation Agents
+```bash
+RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
 
-### `implement` (gpt-5.3-codex)
-**Default choice.** Use for most slices — especially cross-stack changes, new features, and backend work. Exhaustive and thorough.
+# Adversarial review — sonnet with review + smoke-test skills
+"$RUNNER" --model claude-sonnet-4-6 --skills review,smoke-test \
+    --slice slice-1 \
+    -p "Adversarial review: write scratch tests to break the code. Focus on concurrency, auth boundaries, and input validation."
 
-### `implement-iterative` (claude-sonnet-4-6)
-Use when:
-- Doing rapid UI iteration (tweak -> check -> tweak)
-- Frontend-only changes with quick feedback loops
-- The slice is well-defined and doesn't need deep exploration
+# Quick sanity check — codex with brief report
+"$RUNNER" --model gpt-5.3-codex --skills review \
+    --slice slice-1 -D brief
 
-### `implement-deliberate` (claude-opus-4-6)
-Use when:
-- The slice involves subtle correctness concerns (race conditions, state machines)
-- Architectural decisions need careful reasoning
-- Previous implementation attempts failed or produced bugs
+# Deep implementation — opus for subtle correctness
+"$RUNNER" --model claude-opus-4-6 --skills smoke-test,scratchpad \
+    --slice slice-1
 
-### Review Agents
+# Research with model diversity
+"$RUNNER" --model gpt-5.3-codex --skills research -p "Research approach for X" &
+"$RUNNER" --model claude-sonnet-4-6 --skills research -p "Research approach for X" &
+wait
+```
 
-### `review` (gpt-5.3-codex, high effort) — **Default**
-Exhaustive default reviewer — thorough senior dev that leaves no stone unturned. Catches real issues across security, perf, and architecture. Use for most slices, including high-risk changes.
+## Review Fan-Out Guidance
 
-### `review-quick` (gpt-5.3-codex, low effort)
-Fast mechanical sanity check. Use for:
-- Trivial slices (docs, config, simple renames)
-- Quick pass before committing when you're confident in the implementation
-- When speed matters more than depth
+- **low risk**: 1 reviewer
+- **medium risk**: 2 reviewers from distinct model families
+- **high risk**: 3 reviewers from distinct model families
+- if reviewers disagree materially: run tiebreak review with a third model family
 
-### `review-adversarial` (claude-sonnet-4-6, high effort)
-Adversarial tester — actively writes scratch tests to break the code. Use for:
-- Concurrency-sensitive code (race conditions, shared state)
-- Security-critical paths (auth, input validation, API boundaries)
-- When a standard review passed but you want extra confidence
+## Practical Rules
 
-### Research Agents
-
-### `research-claude` (claude-sonnet-4-6)
-Research via claude. Use when:
-- Exploring an unfamiliar codebase before writing a plan
-- Need fast, intuitive pattern recognition and web research
-- Good at connecting codebase patterns to broader ecosystem best practices
-
-### `research-codex` (gpt-5.3-codex)
-Research via codex. Use when:
-- Need exhaustive, methodical code exploration
-- Want a different perspective from the claude research agent
-- Good at deep code path tracing and thorough architecture mapping
-
-### `research-kimi` (opencode/kimi-k2.5-free)
-Research via kimi. Use when:
-- Want a third perspective from a different model family
-- Need to validate findings from claude/codex research
-- Good for cross-referencing approaches across model providers
-
-All research agents have the same goal: explore the codebase, research best practices, evaluate alternative approaches, and recommend the best solution with reasoning. The difference is the model — different models notice different things.
-
-**Parallel research:** Run `research-claude`, `research-codex`, and `research-kimi` in parallel for different perspectives, then synthesize.
-
-### General Rules
-
-1. **Start with `implement`** (default) unless you have a specific reason to use a variant.
-2. **Switch to `implement-iterative`** if the slice is UI-focused and you want faster cycles.
-3. **Escalate to `implement-deliberate`** if a slice fails on the first attempt or involves tricky logic.
-4. **Use `review`** (default) for most slices. Escalate to `review-adversarial` for important changes.
-5. **Use `review-quick`** for trivial slices where a fast sanity check suffices.
-6. **Use `-m MODEL` override** on any agent when you want to temporarily switch models without changing the agent definition.
+1. Prefer the smallest model set that still controls risk.
+2. Avoid running multiple models when change scope is trivial.
+3. Escalate model depth only when complexity/risk justifies it.
+4. Record rationale for non-default model choices in the run report.
+5. When composing skills, pick the minimum set that covers the task — don't load irrelevant skills.

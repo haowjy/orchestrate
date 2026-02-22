@@ -18,9 +18,9 @@ Determine which files to review:
 
 ### Step 2: Load Rules
 
-1. **Always** load `references/general.md`
+1. **Always** load `.orchestrate/references/general.md`
 2. **Read project instruction files** — look for `CLAUDE.md` or `AGENTS.md` at the repo root (whichever exists). Read any stack-specific instruction files in directories relevant to the files in scope (e.g., `backend/CLAUDE.md`, `frontend/AGENTS.md`).
-3. **Load matching reference files** — if additional `references/*.md` files exist beyond `general.md`, load any whose name matches a top-level directory in the files being reviewed (e.g., files under `backend/` → load `references/backend.md` if it exists).
+3. **Load matching reference files** — if additional `.orchestrate/references/*.md` files exist beyond `general.md`, load any whose name matches a top-level directory in the files being reviewed (e.g., files under `backend/` -> load `.orchestrate/references/backend.md` if it exists).
 
 ### Step 3: Review Against Categories
 

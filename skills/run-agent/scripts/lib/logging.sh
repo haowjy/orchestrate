@@ -12,32 +12,14 @@ resolve_repo_or_work_path() {
     return
   fi
 
-  # Runtime scope shorthand should always resolve under RUNS_DIR, even when
-  # the path doesn't exist yet. This prevents accidental writes to repo-root
-  # paths like ./plans/* when callers use plan/slice shorthand.
+  # Runtime scope shorthand always resolves under RUNS_DIR.
   if [[ "$path" == plans/* || "$path" == project/* ]]; then
     echo "$RUNS_DIR/$path"
     return
   fi
 
-  # Prefer an existing path under RUNS_DIR (shortest paths), then WORK_DIR, then REPO_ROOT.
-  # This lets callers write e.g. "plans/my-plan/slices/my-slice/slice.md" instead of the
-  # full ".claude/skills/run-agent/.runs/plans/..." path.
-  if [[ -e "$RUNS_DIR/$path" ]]; then
-    echo "$RUNS_DIR/$path"
-    return
-  fi
-  if [[ -e "$WORK_DIR/$path" ]]; then
-    echo "$WORK_DIR/$path"
-    return
-  fi
-  if [[ -e "$REPO_ROOT/$path" ]]; then
-    echo "$REPO_ROOT/$path"
-    return
-  fi
-
-  # Fallback: resolve relative to WORK_DIR.
-  echo "$WORK_DIR/$path"
+  # Canonical relative-path base is the repository root.
+  echo "$REPO_ROOT/$path"
 }
 
 path_dir_or_self() {
@@ -81,34 +63,21 @@ sanitize_log_label() {
 
 infer_scope_root() {
   local value=""
-  local first=""
   local resolved=""
 
-  # Highest confidence signals first.
-  # Prefer slice-oriented vars, with TASK_* aliases for compatibility.
-  value="${VARS[SLICE_FILE]:-${VARS[TASK_FILE]:-}}"
+  # Highest confidence signal: the active slice file.
+  value="${VARS[SLICE_FILE]:-}"
   if [[ -n "$value" ]]; then
     resolved="$(resolve_repo_or_work_path "$value")"
     path_dir_or_self "$resolved"
     return
   fi
 
-  value="${VARS[SLICES_DIR]:-${VARS[TASKS_DIR]:-}}"
+  value="${VARS[SLICES_DIR]:-}"
   if [[ -n "$value" ]]; then
     resolved="$(resolve_repo_or_work_path "$value")"
     path_dir_or_self "$resolved"
     return
-  fi
-
-  value="${VARS[BREADCRUMBS]:-}"
-  if [[ -n "$value" ]]; then
-    IFS=',' read -r first _ <<< "$value"
-    first="$(echo "$first" | sed 's/^ *//; s/ *$//')"
-    if [[ -n "$first" ]]; then
-      resolved="$(resolve_repo_or_work_path "$first")"
-      path_dir_or_self "$resolved"
-      return
-    fi
   fi
 
   value="${VARS[PLAN_FILE]:-}"

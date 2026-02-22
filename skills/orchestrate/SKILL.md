@@ -1,34 +1,154 @@
 ---
 name: orchestrate
-description: Flexible supervisor loop — launches agents via run-agent.sh to implement plans.
-allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/record-commit.sh *), Bash(*/run-agent/scripts/log-inspect.sh *), Bash(*/run-agent/scripts/save-handoff.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(rm */orchestrate/.session/*), Bash(rm */run-agent/.runs/*), Bash(cp *), Bash(ln *), Bash(date *)
+description: Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh.
+allowed-tools: Bash(.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(.agents/.orchestrate/skills/run-agent/scripts/record-commit.sh *), Bash(.agents/.orchestrate/skills/run-agent/scripts/log-inspect.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
 ---
 
-# Orchestrate — Supervisor Skill
+# Orchestrate — Multi-Model Supervisor
 
-> **ROLE: You are a SUPERVISOR, not an implementer.**
-> You compose context and launch agents via `run-agent/scripts/run-agent.sh`.
-> You NEVER write, edit, or generate implementation code yourself.
-> You NEVER stop to ask the user if you should continue. You run autonomously until complete.
+> **ROLE: You are a supervisor.** Your primary tool is `run-agent.sh`. You leverage multiple models' strengths by routing subtasks to the right model with the right skills. You NEVER write implementation code yourself.
+
+## Canonical Runtime
+
+Root: `.orchestrate/`
+
+- skills: `.orchestrate/skills/*/SKILL.md`
+- runs: `.orchestrate/runs/`
+- session: `.orchestrate/session/`
+- references: `.orchestrate/references/*.md`
+
+Runner path:
+```bash
+RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+```
+
+## Skill Discovery
+
+At startup, discover available capabilities:
+
+1. List directories under `.orchestrate/skills/`
+2. Read each `SKILL.md` frontmatter for `name:` and `description:`
+3. Match skills to the current task based on descriptions
+
+Skills are your building blocks. You don't need named agent definitions — compose the right model + skills + prompt for each subtask dynamically.
+
+## Model Selection
+
+Read the `model-guidance` skill (`.orchestrate/skills/model-guidance/SKILL.md`) before choosing models. It explains:
+- Model strengths and weaknesses
+- Which model to pick for which task type
+- How to combine skills for variant behaviors
+
+## Run Composition
+
+Your primary tool is `run-agent.sh`. Compose runs by picking:
+1. **Model** (`--model` or `-m`) — based on model-guidance for the task type
+2. **Skills** (`--skills`) — comma-separated skill names to load into the subagent's prompt
+3. **Prompt** (`-p`) — what the subagent should do
+4. **Context files** (`-f`) — extra files appended to the prompt
+5. **Template vars** (`-v KEY=VALUE`) — injected into skill templates
+
+Key flags:
+```
+--model MODEL        Model to use (routes to correct CLI automatically)
+--skills a,b,c       Skills to compose into the prompt
+-p "prompt"          Task prompt
+-f path/to/file      Reference file (appended to prompt)
+-v KEY=VALUE         Template variable
+--plan NAME          Plan shorthand (sets PLAN_FILE)
+--slice NAME         Slice shorthand (sets SLICE_FILE, SLICES_DIR)
+-D brief|standard|detailed   Report detail level
+--dry-run            Show composed prompt without executing
+```
 
 ## Cardinal Rules
 
-1. **NEVER write implementation code.** You compose *prompts* and launch *agents* that do the work.
-2. **NEVER edit source files.** You have no `Edit` or `Write` tool access. Use `Bash(cat > ...)` for slice/prompt files only.
-3. **Every slice MUST go through `run-agent/scripts/run-agent.sh`.** No exceptions, even if trivial.
-4. **Your job is: read plan -> decide next action -> launch agent -> evaluate -> repeat.**
-5. **NEVER stop to ask the user to continue.** Only stop on: plan complete, or unrecoverable failure.
-6. **NEVER push to remote.** Commit after each slice, but never `git push`.
+1. **During planning:** Stop and collaborate with the user. Get alignment before executing.
+2. **During execution:** Run autonomously. Never stop to ask unless unrecoverably blocked.
+3. **Never push** to remote. Commit is fine, push is not.
+4. **Primary tool is `run-agent.sh`** — compose prompts and launch subagents. Do trivial things directly only when a subagent would be wasteful.
+5. **Evaluate subagent output** — read reports, decide if quality is sufficient or if rework is needed.
+6. **Never write implementation code.** You compose prompts and launch agents that do the work.
 
-## Anti-Patterns
+## Core Loop
 
-| If you find yourself doing this... | Do this instead: |
-|---|---|
-| Reading source code to understand implementation | Compose a prompt that tells the agent what to implement |
-| Writing any source code | Put requirements in a prompt, launch an agent |
-| Thinking "this is simple, I'll just do it" | Launch the agent anyway. No exceptions |
-| More than 3 tool calls without launching an agent | Compose the prompt and launch |
-| Asking "should I continue?" | You don't ask. You continue |
+1. Understand what needs to happen
+2. Pick the best model for the subtask (via model-guidance)
+3. Pick the right skills to attach (via skill discovery)
+4. Launch via `run-agent.sh`
+5. Evaluate the subagent's output (read `report.md`)
+6. Decide what to do next
+
+## Worked Example: Plan Execution
+
+One common flow (not the only flow):
+
+```bash
+RUNNER=.agents/.orchestrate/skills/run-agent/scripts/run-agent.sh
+
+# 1. Setup — derive plan name, create runtime dirs
+PLAN_NAME="$(git branch --show-current)/$(basename "$PLAN_FILE" .md)"
+export ORCHESTRATE_PLAN="$PLAN_NAME"
+mkdir -p ".orchestrate/runs/plans/$PLAN_NAME"/{.scratch/code/smoke,logs/agent-runs,slices}
+mkdir -p ".orchestrate/session/plans/$PLAN_NAME"/{handoffs,commits,slices}
+
+# 2. Plan-slice — use codex for precise acceptance criteria
+"$RUNNER" --model gpt-5.3-codex --skills plan-slice \
+    -v PLAN_FILE="$PLAN_FILE" \
+    -v SLICES_DIR=".orchestrate/runs/plans/$PLAN_NAME/slices" \
+    -p "Determine the next implementable slice from the plan."
+
+# 3. Implement — codex for cross-stack, sonnet for UI iteration
+"$RUNNER" --model gpt-5.3-codex --skills smoke-test,scratchpad \
+    --plan "$PLAN_NAME" --slice slice-1
+
+# 4. Review — fan out to multiple model families for confidence
+"$RUNNER" --model gpt-5.3-codex --skills review \
+    --plan "$PLAN_NAME" --slice slice-1 &
+"$RUNNER" --model claude-opus-4-6 --skills review \
+    --plan "$PLAN_NAME" --slice slice-1 &
+wait
+# Read both reports, synthesize findings
+
+# 5. Commit — haiku for fast, clean commit messages
+"$RUNNER" --model claude-haiku-4-5 \
+    --plan "$PLAN_NAME" --slice slice-1 \
+    -p "Stage and commit changes for this slice with a concise message."
+
+# 6. Record commit
+.agents/.orchestrate/skills/run-agent/scripts/record-commit.sh \
+    --plan "$PLAN_NAME" --slice slice-1
+```
+
+This is one common pipeline. Adapt freely: skip review for trivial changes, run research before implementing unfamiliar code, add adversarial testing for security-critical paths.
+
+## Review Fan-Out
+
+When to fan out:
+- **Low risk** (docs, config, renames): 1 reviewer
+- **Medium risk** (feature work, refactors): 2 reviewers from distinct model families
+- **High risk** (auth, concurrency, data migration): 3 reviewers from distinct model families
+
+If reviewers disagree materially, run a tiebreak review with a different model.
+
+Fan-out pattern:
+```bash
+# Parallel review — PID-based log dirs keep them separate
+"$RUNNER" --model gpt-5.3-codex --skills review --slice slice-1 &
+"$RUNNER" --model claude-opus-4-6 --skills review --slice slice-1 &
+wait
+# Read reports from each, synthesize
+```
+
+## Parallel Runs
+
+PID-based log directories keep parallel runs separate automatically. Use `&` + `wait`:
+
+```bash
+"$RUNNER" --model gpt-5.3-codex --skills research -p "Research approach A" &
+"$RUNNER" --model claude-sonnet-4-6 --skills research -p "Research approach B" &
+wait
+```
 
 ## Usage
 
@@ -36,210 +156,38 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 /orchestrate <plan-file> [--plan-name NAME]
 ```
 
-- `plan-file` — path to the plan markdown file (required)
-- `--plan-name NAME` — override the plan runtime directory name (default: derived from plan filename)
+### Setup Steps
 
-## Plan Runtime Directory
+1. Parse plan file path and derive `{plan-name}`: `{branch}/{plan-filename}` (branch from `git branch --show-current`, filename without `.md`). Override with `--plan-name NAME`.
+2. Set `RUNS_ROOT=.orchestrate/runs/plans/{plan-name}` and `PLAN_ROOT=.orchestrate/session/plans/{plan-name}`
+3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all `--slice` calls inherit this
+4. Create runtime dirs
+5. Discover available skills
+6. Read the plan to understand scope
+7. Begin the core loop
 
-Runtime artifacts are split between two directories — raw per-run artifacts in `run-agent/.runs/` and coordination state in `orchestrate/.session/`:
+### Handoff Snapshots
 
-```
-{skills-dir}/run-agent/.runs/                    # raw per-run artifacts
-├── project/
-│   ├── logs/agent-runs/{agent}-{PID}/
-│   │   ├── params.json
-│   │   ├── input.md
-│   │   ├── output.json
-│   │   ├── report.md
-│   │   └── files-touched.txt
-│   └── .scratch/code/smoke/
-└── plans/{plan-name}/
-    └── slices/{slice-name}/
-        ├── logs/agent-runs/{agent}-{PID}/
-        └── .scratch/code/smoke/
-
-{skills-dir}/orchestrate/.session/               # coordination state
-├── project/
-│   └── index.log
-└── plans/{plan-name}/
-    ├── index.log
-    ├── handoffs/
-    ├── commits/
-    └── slices/{slice-name}/
-        └── index.log
-```
-
-Use these terms:
-- `RUNS_DIR`: `{skills-dir}/run-agent/.runs/` — raw artifacts (logs, scratch)
-- `SESSION_DIR`: `{skills-dir}/orchestrate/.session/` — coordination state (index, handoffs, commits)
-- `RUNS_ROOT`: `$RUNS_DIR/plans/{plan-name}` — raw artifacts for a plan
-- `PLAN_ROOT`: `$SESSION_DIR/plans/{plan-name}` — coordination state for a plan
-- `SLICE_ROOT`: `$RUNS_DIR/plans/{plan-name}/slices/{slice-name}` — raw artifacts for a slice
-- `SCOPE_ROOT`: whichever level you are currently operating in (project, plan, or slice)
-
-## How to Launch Agents
-
-Use `run-agent/scripts/run-agent.sh` for everything. Log directories are auto-derived from scope variables (`SLICE_FILE`, `SLICES_DIR`, etc.) with PID appended for parallel safety.
-
-Every run produces a `report.md` (written by the subagent) and prints it to stdout. Read the report to understand what the agent did — don't parse verbose logs. Use `-D brief` for quick checks or `-D detailed` for deep analysis (default: `standard`).
+Periodically (every 2-3 slices), save a handoff:
 
 ```bash
-# Using --plan/--slice shorthand (preferred — log dirs auto-derived)
-run-agent/scripts/run-agent.sh implement --plan my-plan --slice slice-1
-
-# When ORCHESTRATE_PLAN is exported (set in Step 1), --slice alone works
-run-agent/scripts/run-agent.sh implement --slice slice-1
-
-# Pass reference files
-run-agent/scripts/run-agent.sh implement --slice slice-1 \
-    -f path/to/extra-context.md
-
-# Equivalent long form with -v (still supported)
-run-agent/scripts/run-agent.sh implement -v SLICE_FILE=$SLICE_ROOT/slice.md
-
-# Ad-hoc with skills
-run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
-
-# Override model on any agent
-run-agent/scripts/run-agent.sh implement -m claude-opus-4-6
-
-# Parallel multi-variant review — PID-based log dirs keep them separate automatically
-run-agent/scripts/run-agent.sh review --slice slice-1 &
-run-agent/scripts/run-agent.sh review --slice slice-1 -m claude-opus-4-6 &
-wait
-```
-
-## Agent Selection
-
-See the `model-guidance` skill for detailed model tendencies and when to use each agent variant.
-
-## Pipeline
-
-The orchestrator is a **flexible loop**, not a rigid pipeline. You decide what agent to run next based on the plan and current state.
-
-### Typical Flow
-
-```
-plan-slice -> implement -> review -> (clean? commit : fix -> review) -> next slice
-```
-
-But you can deviate: skip review for trivial changes, run multiple reviewers in parallel, re-run plan-slice if the slice was poorly defined, etc.
-
-### Step 0 (Optional): Research
-
-If the plan doesn't exist yet or needs deeper context, launch research with multiple models for different perspectives:
-
-```bash
-# Parallel multi-model research — PID-based log dirs keep them separate
-run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md &
-run-agent/scripts/run-agent.sh research -v PLAN_FILE=_docs/plans/my-plan.md -m claude-sonnet-4-6 &
-wait
-# Read reports from each run's log dir
-```
-
-### Step 1: Setup
-
-1. Parse plan file path and derive `{plan-name}`. Use `{branch}/{plan-filename}` where branch comes from `git branch --show-current` and plan-filename is the `.md` filename without extension. Keep the full branch name as-is (including prefixes). The result can contain `/` — runtime directories will nest naturally.
-   - Example: branch `h/collab`, file `phase-5-proposal-review.md` → `h/collab/phase-5-proposal-review`
-   - Example: branch `main`, file `auth-refactor.md` → `main/auth-refactor`
-   - Example: branch `feat/backend-perf`, file `migrate-to-pgx.md` → `feat/backend-perf/migrate-to-pgx`
-   - If `--plan-name NAME` was provided, use that instead
-2. Set `RUNS_ROOT=$RUNS_DIR/plans/{plan-name}` and `PLAN_ROOT=$SESSION_DIR/plans/{plan-name}`
-3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all subagent `--slice` calls inherit this automatically
-4. Create runtime directories:
-   - `mkdir -p "$RUNS_ROOT"/{.scratch/code/smoke,logs/agent-runs,slices}`
-   - `mkdir -p "$PLAN_ROOT"/{handoffs,commits,slices}`
-5. Read the plan to understand scope, phases, and slices
-
-### Step 2: Plan Slice
-
-Launch the plan-slice agent to determine the next slice:
-
-```bash
-run-agent/scripts/run-agent.sh plan-slice \
-    -v PLAN_FILE={plan-file} \
-    -v SLICES_DIR=$SLICE_ROOT
-```
-
-Read the output slice file. If it contains `ALL_DONE`, the plan is complete — stop.
-
-### Step 3: Implement
-
-```bash
-run-agent/scripts/run-agent.sh implement --slice {slice-name}
-```
-
-After: read the agent output log and slice file for completion notes.
-
-**If the slice involves documentation with Mermaid diagrams:** Include the `mermaid` skill (`--skills mermaid`) or add `-f .claude/skills/mermaid/SKILL.md` so the agent follows Mermaid syntax rules and validates with `./scripts/check-mermaid.sh`.
-
-### Step 4: Review
-
-For large or important changes, launch `review` with multiple models in parallel to get different perspectives:
-
-```bash
-# Parallel dual-model review (recommended for large changes)
-run-agent/scripts/run-agent.sh review --slice {slice-name} &
-run-agent/scripts/run-agent.sh review --slice {slice-name} -m claude-opus-4-6 &
-wait
-```
-
-For smaller changes, a single reviewer is sufficient:
-
-```bash
-run-agent/scripts/run-agent.sh review --slice {slice-name}
-```
-
-The review agent's prompt uses `{{SLICES_DIR}}` template vars to locate the slice file and `files-touched.txt` automatically — no `-f` flags needed. PID-based log dirs keep parallel runs separate automatically. After all return, synthesize findings from both.
-
-**Evaluate:** If no cleanup files -> proceed to commit. If cleanup files exist -> run cleanup/implement with findings as context, then re-review. Use judgment: don't loop forever on style nits.
-
-### Step 5: Commit
-
-```bash
-run-agent/scripts/run-agent.sh commit \
-    -v BREADCRUMBS="$SLICE_ROOT/slice.md"
-```
-
-After commit, record it:
-
-```bash
-run-agent/scripts/record-commit.sh --plan {plan-name} --slice {slice-name}
-```
-
-### Step 6: Handoff Snapshot
-
-Periodically (every 2-3 slices, or before stopping), save a handoff:
-
-```bash
-cat > "$PLAN_ROOT/handoffs/latest.md" <<EOF
+cat > ".orchestrate/session/plans/$PLAN_NAME/handoffs/latest.md" <<EOF
 # Handoff — $(date -u +"%Y-%m-%d %H:%M UTC")
 
 ## Status
-{summary of progress}
+{summary}
 
 ## Completed
-{list of completed slices/phases}
+{list of completed slices}
 
 ## Next Steps
 {what should happen next}
-
-## Notes
-{any important context}
 EOF
-cp "$PLAN_ROOT/handoffs/latest.md" \
-   "$PLAN_ROOT/handoffs/$(date -u +"%Y-%m-%dT%H-%M").md"
 ```
 
-### Step 7: Loop
+### Completion
 
-Go back to Step 2. Continue until:
+Stop when:
 - Plan-slice returns `ALL_DONE`
-- Unrecoverable failure (agent fails with no progress)
-
-## Your Role Between Steps
-
-1. **Print status:** `[orchestrate] Slice N: description`
-2. **Read agent output/logs** to understand what happened
-3. **Make decisions** — what agent to run next, whether to re-review, when to commit
-4. **Continue automatically** to the next step. Never pause for user input.
+- User's intent is fully satisfied
+- Unrecoverable failure (no progress after retry)

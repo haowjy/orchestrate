@@ -21,10 +21,33 @@ done
 SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd -P)"
 CURRENT_DIR="$(pwd -P)"
 REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
-AGENTS_DIR="$(cd "$SCRIPT_DIR/../agents" && pwd -P)"
-SKILLS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-RUNS_DIR="$SKILLS_DIR/run-agent/.runs"
-SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
+ORCHESTRATE_ROOT="${ORCHESTRATE_ROOT:-}"
+ORCHESTRATE_ROOT_LOCKED=false
+if [[ -n "$ORCHESTRATE_ROOT" ]]; then
+  ORCHESTRATE_ROOT_LOCKED=true
+fi
+AGENTS_DIR=""
+SKILLS_DIR=""
+RUNS_DIR=""
+SESSION_DIR=""
+
+refresh_orchestrate_paths() {
+  local repo_base="$1"
+  if [[ "$ORCHESTRATE_ROOT_LOCKED" != true ]]; then
+    ORCHESTRATE_ROOT="$repo_base/.orchestrate"
+  fi
+  AGENTS_DIR="$ORCHESTRATE_ROOT/agents"
+  SKILLS_DIR="$ORCHESTRATE_ROOT/skills"
+  RUNS_DIR="$ORCHESTRATE_ROOT/runs"
+  SESSION_DIR="$ORCHESTRATE_ROOT/session"
+}
+
+refresh_orchestrate_paths_from_workdir() {
+  local candidate_repo
+  candidate_repo="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORK_DIR")"
+  REPO_ROOT="$candidate_repo"
+  refresh_orchestrate_paths "$REPO_ROOT"
+}
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
 
@@ -57,6 +80,8 @@ declare -a CLI_CMD_ARGV=()
 # CLI_HARNESS — populated by build_cli_command() in lib/exec.sh (claude|codex|opencode)
 CLI_HARNESS=""
 
+refresh_orchestrate_paths "$REPO_ROOT"
+
 # ─── Source Modules ──────────────────────────────────────────────────────────
 
 source "$SCRIPT_DIR/lib/parse.sh"
@@ -74,9 +99,11 @@ init_work_dir() {
 
   # Prefer the git root of the working dir so relative file lookups map to the target project.
   REPO_ROOT="$(git -C "$WORK_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$WORK_DIR")"
+  refresh_orchestrate_paths "$REPO_ROOT"
 }
 
 init_dirs() {
+  mkdir -p "$ORCHESTRATE_ROOT"
   mkdir -p "$RUNS_DIR/project"/{.scratch/code/smoke,logs/agent-runs}
   mkdir -p "$SESSION_DIR/project"
 }

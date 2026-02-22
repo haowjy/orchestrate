@@ -8,7 +8,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/run-agent.sh [agent] [OPTIONS]
 
-  [agent]              Optional. Resolves to agents/<name>.md (sibling dir)
+  [agent]              Optional. Resolves to .orchestrate/agents/<name>.md
 
 Options:
   -m, --model MODEL    Model override (default: from agent definition)
@@ -25,9 +25,10 @@ Options:
   -C, --cd DIR         Working directory for subprocess
 
 Environment:
+  ORCHESTRATE_ROOT         Canonical orchestrate root (default: <repo>/.orchestrate)
   ORCHESTRATE_PLAN         Default plan name (inherited by --slice without --plan)
   ORCHESTRATE_DEFAULT_CLI  Force all model routing to a specific CLI (claude, codex, opencode)
-  ORCHESTRATE_AGENT_DIR  Override agent definition directory (highest precedence)
+  ORCHESTRATE_AGENT_DIR    Override agent definition directory (highest precedence)
 EOF
   exit 1
 }
@@ -74,8 +75,6 @@ resolve_agent_file() {
   if [[ -n "${ORCHESTRATE_AGENT_DIR:-}" ]]; then
     dirs+=("$ORCHESTRATE_AGENT_DIR")
   fi
-  dirs+=("$WORK_DIR/.agents/skills/run-agent/agents")
-  dirs+=("$WORK_DIR/.claude/skills/run-agent/agents")
   dirs+=("$AGENTS_DIR")
 
   for candidate_dir in "${dirs[@]}"; do
@@ -157,6 +156,7 @@ parse_agent_md() {
 
 parse_args() {
   preparse_work_dir_override "$@"
+  refresh_orchestrate_paths_from_workdir
 
   # First arg might be an agent name (not starting with -)
   if [[ $# -gt 0 && "${1:0:1}" != "-" ]]; then
@@ -168,7 +168,7 @@ parse_args() {
     AGENT_FILE="$(resolve_agent_file "$AGENT_NAME" || true)"
     if [[ ! -f "$AGENT_FILE" ]]; then
       echo "ERROR: Agent not found: $AGENT_NAME" >&2
-      echo "Checked: ORCHESTRATE_AGENT_DIR, $WORK_DIR/.agents/skills/run-agent/agents, $WORK_DIR/.claude/skills/run-agent/agents, $AGENTS_DIR" >&2
+      echo "Checked: ORCHESTRATE_AGENT_DIR, $AGENTS_DIR" >&2
       exit 1
     fi
     parse_agent_md "$AGENT_FILE"
@@ -250,7 +250,6 @@ parse_args() {
     esac
   done
 
-  normalize_var_aliases
   expand_plan_slice_shorthand
 
   # ─── Read prompt from stdin if not provided via -p ─────────────────────────
@@ -298,27 +297,6 @@ expand_plan_slice_shorthand() {
       VARS[SLICES_DIR]="$RUNS_DIR/plans/$PLAN_NAME/slices/$SLICE_NAME"
       HAS_VARS=true
     fi
-  fi
-}
-
-normalize_var_aliases() {
-  # Allow both SLICE_* and TASK_* keys.
-  if [[ -n "${VARS[TASK_FILE]:-}" ]] && [[ -z "${VARS[SLICE_FILE]:-}" ]]; then
-    VARS[SLICE_FILE]="${VARS[TASK_FILE]}"
-    HAS_VARS=true
-  fi
-  if [[ -n "${VARS[SLICE_FILE]:-}" ]] && [[ -z "${VARS[TASK_FILE]:-}" ]]; then
-    VARS[TASK_FILE]="${VARS[SLICE_FILE]}"
-    HAS_VARS=true
-  fi
-
-  if [[ -n "${VARS[TASKS_DIR]:-}" ]] && [[ -z "${VARS[SLICES_DIR]:-}" ]]; then
-    VARS[SLICES_DIR]="${VARS[TASKS_DIR]}"
-    HAS_VARS=true
-  fi
-  if [[ -n "${VARS[SLICES_DIR]:-}" ]] && [[ -z "${VARS[TASKS_DIR]:-}" ]]; then
-    VARS[TASKS_DIR]="${VARS[SLICES_DIR]}"
-    HAS_VARS=true
   fi
 }
 

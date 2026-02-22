@@ -17,8 +17,10 @@ while [[ -L "$_source" ]]; do
   [[ "$_source" != /* ]] && _source="$_dir/$_source"
 done
 SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd -P)"
-SKILLS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-SESSION_DIR="$SKILLS_DIR/orchestrate/.session"
+CURRENT_DIR="$(pwd -P)"
+REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
+ORCHESTRATE_ROOT="${ORCHESTRATE_ROOT:-$REPO_ROOT/.orchestrate}"
+SESSION_DIR="$ORCHESTRATE_ROOT/session"
 
 # ─── Parse Args ──────────────────────────────────────────────────────────────
 

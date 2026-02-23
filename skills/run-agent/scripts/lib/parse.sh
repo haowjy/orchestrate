@@ -10,13 +10,15 @@ Usage: run-agent.sh [OPTIONS]
 
 Options:
   -m, --model MODEL        Model to use (required unless fallback applies)
-  -e, --effort EFFORT      low | medium | high (default: high)
-  -t, --tools TOOLS        Allowed tools, claude-only (default: "Read,Edit,Write,Bash,Glob,Grep")
+  -V, --variant VARIANT    Model variant passed to harness (default: high)
+                           Presets: low, medium, high, xhigh, max
+                           Not all variants apply to all models.
+      --timeout M          Kill hung harness runs after M minutes (default: 15). Supports fractional minutes.
+      --agent NAME         Agent profile (passed to harness natively where supported)
   -s, --skills LIST        Comma-separated skill names to load
   -p, --prompt TEXT        Prompt text (can also pipe via stdin)
       --session ID         Session ID for grouping related runs
-      --label K=V          Run metadata label (repeatable, e.g. task-type=coding)
-      --task-type TYPE     Shorthand for --label task-type=TYPE (default: coding)
+      --label K=V          Run metadata label (repeatable)
   -v, --var KEY=VALUE      Template variable substitution (repeatable)
   -f, --file PATH          Reference file/dir to list in prompt (repeatable)
   -D, --detail LEVEL       Report detail level: brief | standard | detailed (default: standard)
@@ -100,16 +102,20 @@ parse_args() {
         MODEL_FROM_CLI=true
         shift 2
         ;;
-      -e|--effort)
+      -V|--variant)
         require_option_value "$1" "$#"
-        EFFORT="$2"
-        EFFORT_FROM_CLI=true
+        VARIANT="$2"
+        VARIANT_FROM_CLI=true
         shift 2
         ;;
-      -t|--tools)
+      --timeout)
         require_option_value "$1" "$#"
-        TOOLS="$2"
-        TOOLS_FROM_CLI=true
+        TIMEOUT_MINUTES="$2"
+        shift 2
+        ;;
+      --agent)
+        require_option_value "$1" "$#"
+        AGENT_NAME="$2"
         shift 2
         ;;
       -s|--skills)
@@ -135,12 +141,6 @@ parse_args() {
       --label)
         require_option_value "$1" "$#"
         parse_label_kv "$2"
-        shift 2
-        ;;
-      --task-type)
-        require_option_value "$1" "$#"
-        LABELS["task-type"]="$2"
-        HAS_LABELS=true
         shift 2
         ;;
       -f|--file)
@@ -201,6 +201,13 @@ parse_args() {
 }
 
 validate_args() {
+  if [[ -n "${TIMEOUT_MINUTES:-}" ]]; then
+    if ! [[ "$TIMEOUT_MINUTES" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+      echo "ERROR: --timeout must be a non-negative number of minutes (got: $TIMEOUT_MINUTES)" >&2
+      exit 1
+    fi
+  fi
+
   # Model fallback
   if [[ -z "$MODEL" ]]; then
     echo "[run-agent] WARNING: No model specified; falling back to $FALLBACK_MODEL" >&2
@@ -217,12 +224,6 @@ validate_args() {
   if [[ -z "$PROMPT" ]] && [[ ${#SKILLS[@]} -eq 0 ]] && [[ -z "${CONTINUE_RUN_REF:-}" ]]; then
     echo "ERROR: No prompt or skills specified. Use -p, -s, or --continue-run." >&2
     exit 1
-  fi
-
-  # Ensure every run has a primary task type label.
-  if [[ -z "${LABELS[task-type]:-}" ]]; then
-    LABELS["task-type"]="coding"
-    HAS_LABELS=true
   fi
 
   # Validate template variables are not empty.

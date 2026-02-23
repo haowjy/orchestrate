@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # run-agent.sh — Single entry point for running any agent.
-# Routes models to the correct CLI tool, loads skills, composes prompts, logs everything.
+# Routes models to the correct CLI tool, composes prompts, logs everything.
 #
 # Usage:
 #   run-agent.sh [OPTIONS]
 #   run-agent.sh --model claude-sonnet-4-6 --skills review -p "Review the changes"
-#   run-agent.sh --model gpt-5.3-codex -p "Implement feature" --label task-type=coding
+#   run-agent.sh --model gpt-5.3-codex -p "Implement feature" --label ticket=PAY-123
 #   run-agent.sh --dry-run --model claude-sonnet-4-6 --skills review -p "test"
 #
 # A run is model + skills + prompt. No "agent" abstraction.
@@ -24,13 +24,17 @@ CURRENT_DIR="$(pwd -P)"
 REPO_ROOT="$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$CURRENT_DIR")"
 ORCHESTRATE_ROOT=""
 SKILLS_DIR=""
+AGENTS_DIR=""
 
 refresh_orchestrate_paths() {
   local repo_base="$1"
   ORCHESTRATE_ROOT="$repo_base/.orchestrate"
   # Skills live in the submodule/clone source, not the runtime dir.
   # Derive from SCRIPT_DIR (inside */run-agent/scripts/).
-  SKILLS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd -P)/skills"
+  local source_root
+  source_root="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
+  SKILLS_DIR="$source_root/skills"
+  AGENTS_DIR="$source_root/agents"
 }
 
 refresh_orchestrate_paths_from_workdir() {
@@ -46,8 +50,13 @@ FALLBACK_CLI="codex"
 FALLBACK_MODEL="gpt-5.3-codex"
 
 MODEL=""
-EFFORT="high"
-TOOLS="Read,Edit,Write,Bash,Glob,Grep"
+VARIANT="high"
+AGENT_NAME=""
+AGENT_BODY=""                    # markdown body (frontmatter stripped), used for Codex prompt injection
+AGENT_TOOLS=""                   # comma-separated tool allowlist from agent profile
+AGENT_SANDBOX=""                 # Codex sandbox: read-only, workspace-write, danger-full-access (or empty)
+# Kill hung harness invocations (default: 15 minutes).
+TIMEOUT_MINUTES=15
 SKILLS=()
 PROMPT=""
 CLI_PROMPT=""
@@ -64,8 +73,7 @@ REF_FILES=()
 HAS_VARS=false
 HAS_LABELS=false
 MODEL_FROM_CLI=false
-EFFORT_FROM_CLI=false
-TOOLS_FROM_CLI=false
+VARIANT_FROM_CLI=false
 
 # Runtime state (populated during execution)
 declare -a CLI_CMD_ARGV=()
@@ -112,6 +120,13 @@ init_dirs() {
 
 parse_args "$@"
 init_work_dir
+
+# Load agent profile (if --agent specified) before validation so profile
+# defaults (model, variant, skills) are available to validate_args.
+if [[ -n "$AGENT_NAME" ]]; then
+  load_agent_profile
+fi
+
 validate_args
 prepare_continuation
 init_dirs

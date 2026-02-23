@@ -6,12 +6,13 @@ This file provides guidance when editing the orchestrate toolkit.
 
 Orchestrate is a general-purpose multi-model supervisor toolkit for Claude Code, Codex, and OpenCode. It discovers available skills at runtime and composes subagent runs dynamically — picking the right model and skills for each subtask.
 
-A run is `model + skills + prompt`. No "agent" abstraction — named agents are just convenience aliases with no runtime meaning.
+A run is `model + skills + prompt`. Agent profiles are convenience aliases with default skills, model preferences, and permission settings — not a separate abstraction layer.
 
 Two directory trees:
 
 Source (`orchestrate/` — submodule/clone):
 - `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
+- `orchestrate/agents/*.md` — agent profiles (convenience aliases with permission defaults)
 - `orchestrate/MANIFEST` — skill registry for install.sh
 - `orchestrate/docs/` — design documents
 
@@ -28,9 +29,15 @@ INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
 # Run: model + skills + prompt
 "$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth changes"
 
+# Run with an agent profile (loads defaults from orchestrate/agents/reviewer.md)
+"$RUNNER" --agent reviewer -p "Review auth changes"
+
+# Agent with CLI overrides
+"$RUNNER" --agent reviewer --model claude-opus-4-6 -p "Deep review"
+
 # Run with labels and session grouping
 "$RUNNER" --model gpt-5.3-codex --skills smoke-test \
-    --session my-session --label task-type=coding \
+    --session my-session --label ticket=PAY-123 \
     -p "Implement feature"
 
 # Dry run

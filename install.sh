@@ -73,6 +73,7 @@ else
 fi
 
 SKILLS_SRC="$SCRIPT_DIR/skills"
+AGENTS_SRC="$SCRIPT_DIR/agents"
 MANIFEST="$SCRIPT_DIR/MANIFEST"
 
 echo "Workspace: $PROJECT_ROOT"
@@ -154,6 +155,8 @@ echo ""
 
 AGENTS_SKILLS="$PROJECT_ROOT/.agents/skills"
 CLAUDE_SKILLS="$PROJECT_ROOT/.claude/skills"
+AGENTS_AGENTS="$PROJECT_ROOT/.agents/agents"
+CLAUDE_AGENTS="$PROJECT_ROOT/.claude/agents"
 
 # --- Copy skills (overwrite ours, preserve user additions) ---
 
@@ -197,6 +200,36 @@ copy_skills() {
 echo "Installing skills..."
 copy_skills "$AGENTS_SKILLS" "${INSTALL_LIST[@]}"
 copy_skills "$CLAUDE_SKILLS" "${INSTALL_LIST[@]}"
+
+# --- Copy agent profiles ---
+
+copy_agents() {
+  local target_dir="$1"
+  local src_dir="$2"
+  local copied=0
+
+  if [[ ! -d "$src_dir" ]]; then
+    echo "  No agent profiles found at $src_dir"
+    return
+  fi
+
+  mkdir -p "$target_dir"
+
+  for agent_file in "$src_dir"/*.md; do
+    [[ -f "$agent_file" ]] || continue
+    local basename
+    basename="$(basename "$agent_file")"
+    cp "$agent_file" "$target_dir/$basename"
+    ((copied++)) || true
+  done
+
+  echo "  $target_dir: $copied agent profiles"
+}
+
+echo ""
+echo "Installing agent profiles..."
+copy_agents "$AGENTS_AGENTS" "$AGENTS_SRC"
+copy_agents "$CLAUDE_AGENTS" "$AGENTS_SRC"
 
 # --- Runtime directory setup ---
 

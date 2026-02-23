@@ -19,20 +19,25 @@ sanitize_model_for_id() {
   echo "$model" | tr '/' '-' | tr '[:upper:]' '[:lower:]'
 }
 
-# Sanitize task-type for run ID: lowercase, replace non-[a-z0-9-] with -, collapse.
-sanitize_task_type() {
-  local tt="$1"
-  tt="$(echo "$tt" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')"
-  [[ -z "$tt" ]] && tt="coding"
-  echo "$tt"
+# Sanitize a value for use in run IDs: lowercase, replace non-[a-z0-9-] with -, collapse.
+sanitize_for_id() {
+  local val="$1"
+  val="$(echo "$val" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')"
+  [[ -z "$val" ]] && val="unknown"
+  echo "$val"
 }
 
 build_run_id() {
-  local ts model task_type
+  local ts agent model
   ts="$(date -u +"%Y%m%dT%H%M%SZ")"
+  # Agent name when set, otherwise "run-agent" as the default identity.
+  if [[ -n "${AGENT_NAME:-}" ]]; then
+    agent="$(sanitize_for_id "$AGENT_NAME")"
+  else
+    agent="run-agent"
+  fi
   model="$(sanitize_model_for_id "$MODEL")"
-  task_type="$(sanitize_task_type "${LABELS[task-type]:-coding}")"
-  echo "${ts}__${model}__${task_type}__$$"
+  echo "${ts}__${agent}__${model}__$$"
 }
 
 # ─── Log Setup ────────────────────────────────────────────────────────────────
@@ -55,19 +60,23 @@ setup_logging() {
 
 write_log_params() {
   local cli_cmd="$1"
-  local skills_json labels_json now_utc session_id
+  local skills_json labels_json now_utc session_id timeout_minutes
   skills_json="$(build_skills_json)"
   labels_json="$(build_labels_json)"
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   session_id="${SESSION_ID:-$RUN_ID}"
+  timeout_minutes="${TIMEOUT_MINUTES:-15}"
 
   cat > "$LOG_DIR/params.json" <<EOF
 {
   "run_id": "$(json_escape "$RUN_ID")",
   "session_id": "$(json_escape "$session_id")",
   "model": "$(json_escape "$MODEL")",
-  "effort": "$(json_escape "$EFFORT")",
-  "tools": "$(json_escape "$TOOLS")",
+  "variant": "$(json_escape "$VARIANT")",
+  "timeout_minutes": $timeout_minutes,
+  "agent": "$(json_escape "${AGENT_NAME:-}")",
+  "tools": "$(json_escape "${AGENT_TOOLS:-}")",
+  "sandbox": "$(json_escape "${AGENT_SANDBOX:-}")",
   "skills": $skills_json,
   "labels": $labels_json,
   "cli": "$(json_escape "$cli_cmd")",
@@ -139,9 +148,14 @@ append_start_row() {
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   session_id="${SESSION_ID:-$RUN_ID}"
 
+  local agent_field=""
+  if [[ -n "${AGENT_NAME:-}" ]]; then
+    agent_field="\"agent\":\"$(json_escape "$AGENT_NAME")\","
+  fi
+
   local row
   row=$(cat <<EOF
-{"run_id":"$(json_escape "$RUN_ID")","status":"running","created_at_utc":"$(json_escape "$now_utc")","cwd":"$(json_escape "$WORK_DIR")","session_id":"$(json_escape "$session_id")","model":"$(json_escape "$MODEL")","harness":"$(json_escape "$CLI_HARNESS")","skills":$skills_json,"labels":$labels_json,"log_dir":"$(json_escape "$LOG_DIR")"}
+{"run_id":"$(json_escape "$RUN_ID")","status":"running","created_at_utc":"$(json_escape "$now_utc")","cwd":"$(json_escape "$WORK_DIR")","session_id":"$(json_escape "$session_id")","model":"$(json_escape "$MODEL")","harness":"$(json_escape "$CLI_HARNESS")",${agent_field}"skills":$skills_json,"labels":$labels_json,"log_dir":"$(json_escape "$LOG_DIR")"}
 EOF
   )
 

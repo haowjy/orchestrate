@@ -5,28 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
-fail() {
-  echo "FAIL: $1" >&2
-  exit 1
-}
-
-assert_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local msg="$3"
-  if [[ "$haystack" != *"$needle"* ]]; then
-    fail "$msg"$'\n'"Expected: $needle"$'\n'"Got:"$'\n'"$haystack"
-  fi
-}
-
-assert_not_contains() {
-  local haystack="$1"
-  local needle="$2"
-  local msg="$3"
-  if [[ "$haystack" == *"$needle"* ]]; then
-    fail "$msg"$'\n'"Unexpected: $needle"$'\n'"Got:"$'\n'"$haystack"
-  fi
-}
+source "$SCRIPT_DIR/lib/assert.sh"
+parse_test_flags "$@"
 
 test_model_guidance_loader_precedence() {
   local tmp="$1"
@@ -106,10 +86,10 @@ main() {
   tmp="$(mktemp -d)"
   trap "rm -rf '$tmp'" EXIT
 
-  test_model_guidance_loader_precedence "$tmp"
-  test_skill_policy_loader_precedence_and_parse "$tmp"
+  run_test test_model_guidance_loader_precedence "$tmp"
+  run_test test_skill_policy_loader_precedence_and_parse "$tmp"
 
-  echo "PASS: resource loader unit tests"
+  finish_tests "resource loader unit tests"
 }
 
 main "$@"

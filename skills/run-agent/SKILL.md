@@ -5,7 +5,7 @@ description: Agent execution engine — composes prompts, routes models, and wri
 
 # Run-Agent — Execution Engine
 
-Single entry point for agent execution. A run is `model + skills + prompt` — no "agent" abstraction. Routes to the correct CLI (`claude`, `codex`, `opencode`), logs everything, and writes structured index entries.
+Single entry point for agent execution. A run is `model + skills + prompt`, optionally fronted by an agent profile for convenience defaults and permissions. Routes to the correct CLI (`claude`, `codex`, `opencode`), logs everything, and writes structured index entries.
 
 Skills source: sibling skills (`../`). Runtime artifacts: `.orchestrate/`.
 
@@ -29,7 +29,7 @@ Compose runs dynamically by specifying model, skills, and prompt:
 
 # With labels and session grouping
 "$RUNNER" --model gpt-5.3-codex --skills smoke-test \
-    --session my-session --label task-type=coding --label ticket=PAY-123 \
+    --session my-session --label ticket=PAY-123 \
     -p "Implement the feature"
 
 # With template variables for project-specific paths
@@ -46,13 +46,13 @@ Compose runs dynamically by specifying model, skills, and prompt:
 | Flag | Description |
 |------|-------------|
 | `--model MODEL` / `-m` | Model to use (auto-routes to correct CLI) |
+| `--agent NAME` | Agent profile for defaults + permissions |
 | `--skills a,b,c` | Skills to compose into the prompt |
 | `-p "prompt"` | Task prompt |
 | `-f path/to/file` | Reference file appended to prompt |
 | `-v KEY=VALUE` | Template variable substitution (repeatable) |
 | `--session ID` | Session ID for grouping related runs |
 | `--label KEY=VALUE` | Run metadata label (repeatable) |
-| `--task-type TYPE` | Shorthand for `--label task-type=TYPE` (default: `coding`) |
 | `-D brief\|standard\|detailed` | Report detail level (default: `standard`) |
 | `--continue-run REF` | Continue a previous run's harness session |
 | `--fork` | Fork the session on continuation (default where supported) |

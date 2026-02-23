@@ -4,6 +4,8 @@
 
 # ─── Skill Loading ───────────────────────────────────────────────────────────
 # Reads SKILL.md, strips YAML frontmatter, returns body with source path annotation.
+# Not used by compose_prompt (skills are listed by name for harness-native loading),
+# but kept for other callers (e.g. orchestrate skill policy loader).
 
 load_skill() {
   local name="$1"
@@ -29,6 +31,145 @@ load_skill() {
     }
     past_frontmatter || !in_frontmatter { if (past_frontmatter || NR > 1 || !/^---$/) print }
   ' "$skill_file"
+}
+
+# ─── Agent Loading ──────────────────────────────────────────────────────────
+# Searches discovery dirs in order, returns path to first <name>.md found.
+
+resolve_agent_file() {
+  local name="$1"
+  local dirs=("$AGENTS_DIR" "$REPO_ROOT/.agents/agents" "$REPO_ROOT/.claude/agents")
+  for dir in "${dirs[@]}"; do
+    local candidate="$dir/$name.md"
+    if [[ -f "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  echo "ERROR: Agent profile not found: $name" >&2
+  echo "  Searched: ${dirs[*]}" >&2
+  return 1
+}
+
+# Loads agent profile, sets globals from frontmatter (model, variant, skills, sandbox, tools).
+# CLI flags always override profile defaults.
+load_agent_profile() {
+  local agent_file
+  agent_file="$(resolve_agent_file "$AGENT_NAME")" || exit 1
+
+  # Extract YAML frontmatter
+  local frontmatter
+  frontmatter="$(awk '
+    BEGIN { in_fm=0; past_fm=0 }
+    /^---$/ {
+      if (!past_fm) {
+        if (in_fm) { past_fm=1; next }
+        else { in_fm=1; next }
+      }
+    }
+    in_fm && !past_fm { print }
+  ' "$agent_file")"
+
+  # Extract body (frontmatter stripped)
+  AGENT_BODY="$(awk '
+    BEGIN { in_fm=0; past_fm=0 }
+    /^---$/ {
+      if (!past_fm) {
+        if (in_fm) { past_fm=1; next }
+        else { in_fm=1; next }
+      }
+    }
+    past_fm || !in_fm { if (past_fm || NR > 1 || !/^---$/) print }
+  ' "$agent_file")"
+
+  # Parse model: (only if not set from CLI)
+  if [[ "$MODEL_FROM_CLI" != true ]]; then
+    local profile_model
+    profile_model="$(echo "$frontmatter" | sed -n 's/^model:[[:space:]]*//p' | xargs)"
+    if [[ -n "$profile_model" ]]; then
+      MODEL="$profile_model"
+    fi
+  fi
+
+  # Parse variant: (only if not set from CLI)
+  if [[ "$VARIANT_FROM_CLI" != true ]]; then
+    local profile_variant
+    profile_variant="$(echo "$frontmatter" | sed -n 's/^variant:[[:space:]]*//p' | xargs)"
+    if [[ -n "$profile_variant" ]]; then
+      VARIANT="$profile_variant"
+    fi
+  fi
+
+  # Parse skills: merge with CLI --skills
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    local already=false
+    for existing in "${SKILLS[@]}"; do
+      [[ "$existing" == "$s" ]] && { already=true; break; }
+    done
+    [[ "$already" == false ]] && SKILLS+=("$s")
+  done < <(_parse_yaml_list "skills" "$frontmatter")
+
+  # Parse sandbox: (orchestrate extension, used for Codex only)
+  local profile_sandbox
+  profile_sandbox="$(echo "$frontmatter" | sed -n 's/^sandbox:[[:space:]]*//p' | xargs)"
+  if [[ -n "$profile_sandbox" ]]; then
+    AGENT_SANDBOX="$profile_sandbox"
+  fi
+
+  # Parse tools: stored as comma-separated string
+  local tools_csv=""
+  while IFS= read -r t; do
+    [[ -z "$t" ]] && continue
+    [[ -n "$tools_csv" ]] && tools_csv+=","
+    tools_csv+="$t"
+  done < <(_parse_yaml_list "tools" "$frontmatter")
+  if [[ -n "$tools_csv" ]]; then
+    AGENT_TOOLS="$tools_csv"
+  fi
+}
+
+# ─── YAML List Parser ────────────────────────────────────────────────────────
+# Parses both inline [a, b] and multiline YAML lists from frontmatter.
+# Outputs one item per line, trimmed.
+
+_parse_yaml_list() {
+  local key="$1"
+  local frontmatter="$2"
+
+  # Try inline format first: key: [a, b, c]
+  local inline
+  inline="$(echo "$frontmatter" | sed -n "s/^${key}:[[:space:]]*\[//p")"
+  if [[ -n "$inline" ]]; then
+    inline="${inline%]}"
+    IFS=',' read -ra items <<< "$inline"
+    for item in "${items[@]}"; do
+      item="$(echo "$item" | xargs)"
+      [[ -n "$item" ]] && echo "$item"
+    done
+    return
+  fi
+
+  # Try multiline format:
+  #   key:
+  #     - item1
+  #     - item2
+  local in_list=false
+  while IFS= read -r line; do
+    if [[ "$in_list" == true ]]; then
+      if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+(.*) ]]; then
+        local item="${BASH_REMATCH[1]}"
+        item="$(echo "$item" | xargs)"
+        [[ -n "$item" ]] && echo "$item"
+      elif [[ "$line" =~ ^[[:space:]]*$ ]]; then
+        continue
+      else
+        break  # next key or end of list
+      fi
+    elif [[ "$line" =~ ^${key}:[[:space:]]*$ ]]; then
+      in_list=true
+    fi
+  done <<< "$frontmatter"
 }
 
 # ─── Model Routing ───────────────────────────────────────────────────────────
@@ -106,22 +247,12 @@ build_labels_json() {
 compose_prompt() {
   local composed=""
 
-  # Load skills
-  if [[ ${#SKILLS[@]} -gt 0 ]]; then
-    composed+="# Skills"$'\n\n'
-    for skill in "${SKILLS[@]}"; do
-      composed+="## $skill"$'\n'
-      composed+="$(load_skill "$skill")"$'\n\n'
-    done
-  fi
-
-  # Task prompt
+  # Task prompt first — it's the primary instruction.
   if [[ -n "$PROMPT" ]]; then
-    composed+="# Task"$'\n\n'
     composed+="$PROMPT"$'\n'
   fi
 
-  # Reference files section
+  # Reference files
   if [[ ${#REF_FILES[@]} -gt 0 ]]; then
     composed+=$'\n'"# Reference Files"$'\n\n'
     for ref in "${REF_FILES[@]}"; do
@@ -130,6 +261,27 @@ compose_prompt() {
         resolved_ref="$(apply_template_vars "$ref")"
       fi
       composed+="- $resolved_ref"$'\n'
+    done
+  fi
+
+  # Inject agent body for Codex (which has no native --agent flag).
+  # Claude Code and OpenCode load the agent profile natively via --agent.
+  if [[ -n "$AGENT_NAME" ]] && [[ -n "$AGENT_BODY" ]]; then
+    local harness
+    harness="$(route_model "$MODEL" 2>/dev/null || echo "")"
+    if [[ "$harness" == "codex" ]]; then
+      composed+=$'\n'"# Agent: $AGENT_NAME"$'\n\n'
+      composed+="$AGENT_BODY"$'\n\n'
+    fi
+  fi
+
+  # List skills by name — harnesses load them natively from their skill directories.
+  # Claude Code: .claude/skills/  |  OpenCode: .agents/skills/  |  Codex: .agents/skills/
+  if [[ ${#SKILLS[@]} -gt 0 ]]; then
+    composed+=$'\n'"# Skills"$'\n\n'
+    composed+="Use these skills to complete your task:"$'\n\n'
+    for skill in "${SKILLS[@]}"; do
+      composed+="- $skill"$'\n'
     done
   fi
 

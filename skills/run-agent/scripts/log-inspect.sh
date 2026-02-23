@@ -2,7 +2,7 @@
 # log-inspect.sh — jq-based conversation log inspector.
 #
 # Usage:
-#   scripts/log-inspect.sh <output.json|output.jsonl> [summary|tools|errors|files|search] [pattern] [context]
+#   scripts/log-inspect.sh <mode> <output.json|output.jsonl> [pattern] [context]
 #
 # Modes:
 #   summary  (default) — cost, tokens, turns, duration, models
@@ -23,14 +23,14 @@ SCRIPT_DIR="$(cd "$(dirname "$_source")" && pwd -P)"
 
 # ─── Args ────────────────────────────────────────────────────────────────────
 
-LOG_FILE="${1:-}"
-MODE="${2:-summary}"
+MODE="${1:-summary}"
+LOG_FILE="${2:-}"
 PATTERN="${3:-}"
 CONTEXT="${4:-2}"
 
 if [[ -z "$LOG_FILE" ]]; then
   cat <<'EOF'
-Usage: scripts/log-inspect.sh <output.json|output.jsonl> [summary|tools|errors|files]
+Usage: scripts/log-inspect.sh <mode> <output.json|output.jsonl> [pattern] [context]
 
 Modes:
   summary  (default)  Cost, tokens, turns, duration, models
@@ -283,7 +283,7 @@ do_files() {
 do_search() {
   if [[ -z "$PATTERN" ]]; then
     echo "ERROR: search mode requires a pattern argument." >&2
-    echo "Usage: scripts/log-inspect.sh <output.json|output.jsonl> search <pattern> [context]" >&2
+    echo "Usage: scripts/log-inspect.sh search <output.json|output.jsonl> <pattern> [context]" >&2
     exit 1
   fi
 

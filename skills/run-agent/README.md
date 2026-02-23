@@ -1,6 +1,6 @@
 # Run-Agent — Execution Engine
 
-Single entry point for agent execution. A run is `model + skills + prompt` — no "agent" abstraction. Routes to the correct CLI tool, logs each run, and writes structured index entries.
+Single entry point for agent execution. A run is `model + skills + prompt`, optionally fronted by an agent profile for defaults and permissions. Routes to the correct CLI tool, logs each run, and writes structured index entries.
 
 Skills source: sibling skills (`../`). Runtime artifacts: `.orchestrate/` from the repo root.
 
@@ -19,9 +19,15 @@ INDEX=scripts/run-index.sh
 # Model + skills + prompt
 "$RUNNER" --model gpt-5.3-codex --skills review -p "Review these changes"
 
+# Kill a hung harness run (default: 15 minutes)
+"$RUNNER" --model claude-sonnet-4-6 --timeout 15 -p "Review these changes"
+
+# With an agent profile
+"$RUNNER" --agent reviewer -p "Review these changes"
+
 # With labels and session grouping
 "$RUNNER" --model gpt-5.3-codex --skills smoke-test \
-    --session my-session --label task-type=coding \
+    --session my-session --label ticket=PAY-123 \
     -p "Implement the feature"
 
 # Dry run — see composed prompt without executing
@@ -37,12 +43,16 @@ INDEX=scripts/run-index.sh
 
 1. Parse model, skills, prompt, labels, session, and context flags
 2. Route model to the correct CLI (`claude`, `codex`, `opencode`)
-3. Load selected skill bodies from `../<skill-name>/SKILL.md`
-4. Compose the final prompt (skills + template vars + reference files + task prompt)
+3. List selected skills by name (harnesses load skill content natively)
+4. Compose the final prompt (task prompt + reference files + skill names)
 5. Write start index row (crash visibility)
 6. Execute the CLI command
 7. Write finalize index row with exit code, duration, git metadata, token usage
 8. Log artifacts to `.orchestrate/runs/agent-runs/<run-id>/`
+
+Notes:
+- `--timeout` is in minutes (supports fractional minutes) and applies to the harness subprocess; a timed-out run exits with code `3`.
+- Some harnesses can exit `0` while producing unusable output; run-agent treats empty output (Claude/OpenCode) or OpenCode error events as failures.
 
 ## Output Artifacts
 

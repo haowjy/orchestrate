@@ -58,8 +58,8 @@ Skills are your building blocks. A run is `model + skills + prompt` — no named
 ## Model Selection
 
 Load model guidance via `../run-agent/scripts/load-model-guidance.sh` before choosing models. This loader enforces precedence:
-- `../run-agent/references/default-model-guidance.md` is always loaded as the base
-- if any files exist under `../run-agent/references/model-guidance/*.md`, they are concatenated after the default
+- `../run-agent/references/default-model-guidance.md` is used as the base
+- if any files exist under `../run-agent/references/model-guidance/*.md`, they replace the default entirely
 
 Use the loaded guidance to decide:
 - Model strengths and weaknesses
@@ -80,13 +80,13 @@ Your primary tool is `run-agent.sh`. Compose runs by picking:
 Key flags:
 ```
 --model MODEL        Model to use (routes to correct CLI automatically)
+--agent NAME         Agent profile for defaults + permissions
 --skills a,b,c       Skills to compose into the prompt
 -p "prompt"          Task prompt
 -f path/to/file      Reference file (appended to prompt)
 -v KEY=VALUE         Template variable
 --label KEY=VALUE    Run metadata label (repeatable)
 --session ID         Session grouping for related runs
---task-type TYPE     Shorthand for --label task-type=TYPE
 -D brief|standard|detailed   Report detail level
 --dry-run            Show composed prompt without executing
 ```
@@ -131,22 +131,22 @@ INDEX=../run-agent/scripts/run-index.sh
 SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
 # 1. Implement — codex for cross-stack, sonnet for UI iteration
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test,scratchpad \
-    --session "$SESSION_ID" --label task-type=coding \
+"$RUNNER" --agent coder --skills smoke-test,scratchpad \
+    --session "$SESSION_ID" \
     -p "Implement the feature described in the plan." \
     -f path/to/plan.md
 
 # 2. Review — fan out to multiple model families for confidence
-"$RUNNER" --model gpt-5.3-codex --skills review \
-    --session "$SESSION_ID" --label task-type=review &
-"$RUNNER" --model claude-opus-4-6 --skills review \
-    --session "$SESSION_ID" --label task-type=review &
+"$RUNNER" --agent reviewer --model gpt-5.3-codex \
+    --session "$SESSION_ID" &
+"$RUNNER" --agent reviewer --model claude-opus-4-6 \
+    --session "$SESSION_ID" &
 wait
 # Read both reports, synthesize findings
 
 # 3. Commit — haiku for fast, clean commit messages
 "$RUNNER" --model claude-haiku-4-5 \
-    --session "$SESSION_ID" --label task-type=ops \
+    --session "$SESSION_ID" \
     -p "Stage and commit changes with a concise message."
 
 # 4. Check session stats

@@ -113,7 +113,20 @@ _release_lock() {
 # Group rows by run_id, merge start + finalize into a single derived object.
 
 _build_derived_view() {
+  local include_archive="${1:-false}"
   _acquire_read_lock
+
+  # Collect input files: main index + optional archive
+  local -a input_files=("$INDEX_FILE")
+  if [[ "$include_archive" == true ]]; then
+    local archive_dir="$ORCHESTRATE_ROOT/index/archive"
+    if [[ -d "$archive_dir" ]]; then
+      while IFS= read -r -d '' f; do
+        input_files+=("$f")
+      done < <(find "$archive_dir" -name '*.jsonl' -print0 2>/dev/null)
+    fi
+  fi
+
   jq -s '
     group_by(.run_id)
     | map(
@@ -129,7 +142,7 @@ _build_derived_view() {
           }
       )
     | sort_by(.started_at) | reverse
-  ' "$INDEX_FILE" 2>/dev/null || echo "[]"
+  ' "${input_files[@]}" 2>/dev/null || echo "[]"
   _release_lock
 }
 
@@ -185,8 +198,8 @@ _resolve_run_ref() {
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
 cmd_list() {
-  local limit=20 cursor="" session="" model="" task_type="" status="" label_filter=""
-  local failed_only=false since="" until_date="" include_archive=false
+  local limit=20 cursor="" session="" model="" status="" label_filter=""
+  local failed_only=false since="" until_date="" include_archive=false agent=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -194,7 +207,7 @@ cmd_list() {
       --cursor)      cursor="$2"; shift 2 ;;
       --session)     session="$2"; shift 2 ;;
       --model)       model="$2"; shift 2 ;;
-      --task-type)   task_type="$2"; shift 2 ;;
+      --agent)       agent="$2"; shift 2 ;;
       --status)      status="$2"; shift 2 ;;
       --label)       label_filter="$2"; shift 2 ;;
       --failed)      failed_only=true; shift ;;
@@ -206,13 +219,13 @@ cmd_list() {
   done
 
   local derived
-  derived="$(_build_derived_view)"
+  derived="$(_build_derived_view "$include_archive")"
 
   # Apply filters
   local filter="."
   [[ -n "$session" ]] && filter+=" | select(.session_id == \"$session\")"
   [[ -n "$model" ]] && filter+=" | select(.model == \"$model\")"
-  [[ -n "$task_type" ]] && filter+=" | select(.labels.\"task-type\" == \"$task_type\")"
+  [[ -n "$agent" ]] && filter+=" | select(.agent == \"$agent\")"
   [[ -n "$status" ]] && filter+=" | select(.effective_status == \"$status\")"
   [[ "$failed_only" == true ]] && filter+=" | select(.effective_status == \"failed\")"
   [[ -n "$since" ]] && filter+=" | select(.started_at >= \"$since\")"
@@ -291,6 +304,7 @@ cmd_show() {
     echo "$run" | jq -r '
       "Run: \(.run_id)\n" +
       "Status: \(.effective_status)\n" +
+      "Agent: \(.agent // "-")\n" +
       "Model: \(.model)\n" +
       "Harness: \(.harness // "-")\n" +
       "Started: \(.started_at)\n" +
@@ -444,7 +458,7 @@ cmd_stats() {
   done
 
   local derived
-  derived="$(_build_derived_view)"
+  derived="$(_build_derived_view "$include_archive")"
 
   if [[ -n "$session" ]]; then
     derived="$(echo "$derived" | jq --arg s "$session" '[.[] | select(.session_id == $s)]')"
@@ -515,14 +529,16 @@ cmd_continue() {
     exit 1
   fi
 
-  # Get original model
-  local orig_model
+  # Get original model and agent
+  local orig_model orig_agent
   orig_model="$(echo "$run" | jq -r '.model')"
+  orig_agent="$(echo "$run" | jq -r '.agent // empty')"
   local target_model="${model_override:-$orig_model}"
 
   # Build run-agent command
   local runner="$(dirname "$0")/run-agent.sh"
   local cmd=("$runner" --model "$target_model" -p "$prompt" --continue-run "$run_id")
+  [[ -n "$orig_agent" ]] && cmd+=(--agent "$orig_agent")
   [[ -n "$continuation_mode_arg" ]] && cmd+=("$continuation_mode_arg")
 
   if [[ -n "$extra_skills" ]]; then
@@ -644,7 +660,7 @@ cmd_retry() {
   if [[ "$dry_run" == true ]]; then
     echo "DRY RUN: Would retry run $run_id"
     echo "  Model: ${model_override:-$(echo "$run" | jq -r '.model')}"
-    echo "  Prompt: ${prompt_override:-$(echo "$run" | jq -r '.labels."task-type" // "coding"')}"
+    echo "  Prompt: ${prompt_override:-(from original input.md)}"
     exit 0
   fi
 
@@ -655,10 +671,11 @@ cmd_retry() {
     exit 1
   fi
 
-  local orig_model orig_prompt orig_skills orig_effort
+  local orig_model orig_prompt orig_skills orig_variant orig_agent
   orig_model="$(jq -r '.model' "$params_file")"
-  orig_effort="$(jq -r '.effort // "high"' "$params_file")"
+  orig_variant="$(jq -r '.variant // .effort // "high"' "$params_file")"
   orig_skills="$(jq -r '.skills // [] | join(",")' "$params_file")"
+  orig_agent="$(jq -r '.agent // empty' "$params_file" 2>/dev/null || echo "")"
 
   # Read original prompt from input.md
   orig_prompt=""
@@ -675,7 +692,8 @@ cmd_retry() {
   # Export retry metadata so run-agent can pick it up
   export RETRIES_RUN_ID="$run_id"
 
-  local cmd=("$runner" --model "$target_model" --effort "$orig_effort")
+  local cmd=("$runner" --model "$target_model" --variant "$orig_variant")
+  [[ -n "$orig_agent" ]] && cmd+=(--agent "$orig_agent")
   [[ -n "$target_skills" ]] && cmd+=(--skills "$target_skills")
 
   # Pass prompt via stdin to avoid arg length limits

@@ -7,54 +7,42 @@
 
 # ─── Build CLI Command (argv array) ──────────────────────────────────────────
 
-normalize_claude_tool_token() {
-  local token="$1"
-  local base="$token"
-  local suffix=""
-
-  if [[ "$token" == *"("* ]]; then
-    base="${token%%(*}"
-    suffix="${token#"$base"}"
+# Deterministic heuristic to infer Codex sandbox tier from tools list.
+# Codex sandbox controls both filesystem AND network access:
+#   read-only         — no writes, no network
+#   workspace-write   — writes to workspace, no network by default
+#   danger-full-access — unrestricted filesystem + network
+infer_sandbox_from_tools() {
+  local tools_csv="$1"
+  if [[ -z "$tools_csv" ]]; then
+    # No tools field = unrestricted
+    echo ""
+    return
   fi
 
-  case "$(echo "$base" | tr '[:upper:]' '[:lower:]')" in
-    read) base="Read" ;;
-    write) base="Write" ;;
-    edit) base="Edit" ;;
-    bash) base="Bash" ;;
-    glob) base="Glob" ;;
-    grep) base="Grep" ;;
-    websearch) base="WebSearch" ;;
-    webfetch) base="WebFetch" ;;
-    *) ;;
-  esac
+  local has_web=false has_write=false has_unrestricted_bash=false has_read_only=false
 
-  echo "${base}${suffix}"
-}
+  IFS=',' read -ra tool_list <<< "$tools_csv"
+  for t in "${tool_list[@]}"; do
+    t="$(echo "$t" | xargs)"
+    case "$t" in
+      WebSearch|WebFetch)   has_web=true ;;
+      Edit|Write)           has_write=true ;;
+      Bash)                 has_unrestricted_bash=true ;;
+      Bash\(*)             has_write=true ;;  # Bash with restrictions = write-level
+      Read|Glob|Grep)       has_read_only=true ;;
+    esac
+  done
 
-normalize_tools_for_harness() {
-  local tool="$1" tools="$2"
-  case "$tool" in
-    claude)
-      local normalized=()
-      local raw token
-      IFS=',' read -ra raw <<< "$tools"
-      for token in "${raw[@]}"; do
-        token="$(echo "$token" | xargs)"
-        [[ -z "$token" ]] && continue
-        normalized+=("$(normalize_claude_tool_token "$token")")
-      done
-      if [[ ${#normalized[@]} -eq 0 ]]; then
-        echo "$tools"
-      else
-        local joined
-        joined="$(IFS=','; echo "${normalized[*]}")"
-        echo "$joined"
-      fi
-      ;;
-    codex)    echo "" ;;
-    opencode) echo "" ;;
-  esac
+  if [[ "$has_unrestricted_bash" == true ]] || [[ "$has_web" == true ]]; then
+    echo "danger-full-access"
+  elif [[ "$has_write" == true ]]; then
+    echo "workspace-write"
+  elif [[ "$has_read_only" == true ]]; then
+    echo "read-only"
+  else
+    echo ""
+  fi
 }
 
 build_continuation_fallback_prompt() {
@@ -292,7 +280,6 @@ build_cli_command() {
 
   CLI_CMD_ARGV=()
   CLI_HARNESS="$tool"
-  normalized_tools="$(normalize_tools_for_harness "$tool" "$TOOLS")"
   if [[ -n "${CONTINUE_RUN_REF:-}" ]] \
     && [[ -n "${CONTINUE_HARNESS_SESSION_ID:-}" ]] \
     && [[ "${CONTINUATION_MODE:-}" != "fallback-prompt" ]]; then
@@ -301,7 +288,14 @@ build_cli_command() {
 
   case "$tool" in
     claude)
-      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --verbose --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
+      local -a agent_flags=()
+      if [[ -n "$AGENT_NAME" ]]; then
+        # Claude Code reads .claude/agents/<name>.md and enforces tools/permissions natively
+        agent_flags+=(--agent "$AGENT_NAME")
+      else
+        agent_flags+=(--dangerously-skip-permissions)
+      fi
+      CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$VARIANT" --verbose --output-format stream-json "${agent_flags[@]}")
       if [[ "$native_continuation" == true ]]; then
         CLI_CMD_ARGV+=(--resume "$CONTINUE_HARNESS_SESSION_ID")
         if [[ "${CONTINUATION_MODE:-}" == "fork" ]]; then
@@ -310,16 +304,34 @@ build_cli_command() {
       fi
       ;;
     codex)
+      # Codex has no --agent flag. Determine sandbox from agent profile.
+      # Priority: explicit sandbox: field > inferred from tools: field > unrestricted
+      local effective_sandbox="${AGENT_SANDBOX:-}"
+      if [[ -z "$effective_sandbox" ]] && [[ -n "$AGENT_TOOLS" ]]; then
+        effective_sandbox="$(infer_sandbox_from_tools "$AGENT_TOOLS")"
+      fi
+      local -a perm_flags=()
+      case "${effective_sandbox:-}" in
+        read-only)           perm_flags+=(--sandbox read-only) ;;
+        workspace-write)     perm_flags+=(--sandbox workspace-write) ;;
+        danger-full-access)  perm_flags+=(--sandbox danger-full-access) ;;
+        *)                   perm_flags+=(--dangerously-bypass-approvals-and-sandbox) ;;
+      esac
       if [[ "$native_continuation" == true ]]; then
-        CLI_CMD_ARGV=(codex exec resume "$CONTINUE_HARNESS_SESSION_ID" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+        CLI_CMD_ARGV=(codex exec resume "$CONTINUE_HARNESS_SESSION_ID" -m "$MODEL" -c "model_reasoning_effort=$VARIANT" "${perm_flags[@]}" --json -)
       else
-        CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+        CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$VARIANT" "${perm_flags[@]}" --json -)
       fi
       ;;
     opencode)
       local effective_model
       effective_model="$(strip_model_prefix "$MODEL")"
-      CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --print-logs --variant "$EFFORT")
+      local -a agent_flags=()
+      if [[ -n "$AGENT_NAME" ]]; then
+        # OpenCode reads .agents/agents/<name>.md and enforces permissions natively
+        agent_flags+=(--agent "$AGENT_NAME")
+      fi
+      CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --print-logs --variant "$VARIANT" "${agent_flags[@]}")
       CLI_PROMPT_MODE="arg"
       if [[ "$native_continuation" == true ]]; then
         CLI_CMD_ARGV+=(--session "$CONTINUE_HARNESS_SESSION_ID")
@@ -379,11 +391,13 @@ do_dry_run() {
 
   echo "═══ DRY RUN ═══"
   echo ""
+  if [[ -n "${AGENT_NAME:-}" ]]; then echo "── Agent: $AGENT_NAME"; fi
   echo "── Model: $MODEL ($(route_model "$MODEL" 2>/dev/null || echo "fallback"))"
-  echo "── Effort: $EFFORT"
-  echo "── Tools: $TOOLS"
+  echo "── Variant: $VARIANT"
   echo "── Report: $DETAIL"
   if [[ ${#SKILLS[@]} -gt 0 ]]; then echo "── Skills: ${SKILLS[*]}"; else echo "── Skills: none"; fi
+  if [[ -n "${AGENT_TOOLS:-}" ]]; then echo "── Tools: $AGENT_TOOLS"; else echo "── Tools: unrestricted"; fi
+  if [[ -n "${AGENT_SANDBOX:-}" ]]; then echo "── Sandbox: $AGENT_SANDBOX"; else echo "── Sandbox: none (unrestricted)"; fi
   if [[ -n "${SESSION_ID:-}" ]]; then echo "── Session: $SESSION_ID"; fi
   if [[ "$HAS_LABELS" == true ]]; then
     local k
@@ -433,6 +447,46 @@ _handle_signal() {
 
 # ─── Execute ─────────────────────────────────────────────────────────────────
 
+write_failfast_report() {
+  local exit_code="$1"
+  local title="$2"
+  local details="${3:-}"
+
+  # Avoid clobbering a non-empty report from an upstream harness (rare but possible).
+  if [[ -f "$LOG_DIR/report.md" ]] && [[ -s "$LOG_DIR/report.md" ]]; then
+    return 0
+  fi
+
+  {
+    echo "# Run Report (auto-generated)"
+    echo ""
+    echo "**Status**: failed (exit $exit_code)"
+    echo ""
+    echo "**Failure**: $title"
+    if [[ -n "$details" ]]; then
+      echo ""
+      echo "$details"
+    fi
+  } > "$LOG_DIR/report.md"
+}
+
+extract_opencode_error_message() {
+  local output_log="$1"
+  if ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+  # Best-effort: find the last error event and extract a message-like field.
+  jq -r '
+    select(.type == "error")
+    | (.error.data.message // .error.message // .error.data // .error // .message // empty)
+  ' "$output_log" 2>/dev/null | tail -1
+}
+
+detect_opencode_error_event() {
+  local output_log="$1"
+  grep -q '"type":"error"' "$output_log" 2>/dev/null
+}
+
 do_execute() {
   local cli_display output_log
   cli_display="$(format_cli_cmd)"
@@ -464,18 +518,27 @@ do_execute() {
   # Save composed prompt
   echo "$COMPOSED_PROMPT" > "$LOG_DIR/input.md"
 
-  echo "[run-agent] Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
+  echo "[run-agent] Model: $MODEL | Variant: $VARIANT | Log: $LOG_DIR" >&2
 
   # Execute via argv array — no eval needed.
   cd "$WORK_DIR"
+  local timeout_used=false
+  local -a runner=()
+  if command -v timeout >/dev/null 2>&1 && awk -v m="${TIMEOUT_MINUTES:-0}" 'BEGIN{exit !(m>0)}'; then
+    local timeout_seconds
+    timeout_seconds="$(awk -v m="${TIMEOUT_MINUTES:-0}" 'BEGIN{printf "%.3f", m*60}')"
+    # Use a grace period so the harness can flush logs before SIGKILL.
+    runner=(timeout --signal=TERM --kill-after=10s "${timeout_seconds}s")
+    timeout_used=true
+  fi
   local harness_exit=0
   set +e
   if [[ "${CLI_PROMPT_MODE:-stdin}" == "arg" ]]; then
-    "${CLI_CMD_ARGV[@]}" "$COMPOSED_PROMPT" \
+    "${runner[@]}" "${CLI_CMD_ARGV[@]}" "$COMPOSED_PROMPT" \
       > "$output_log" \
       2> >(tee "$LOG_DIR/stderr.log" >&2)
   else
-    "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
+    "${runner[@]}" "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
       > "$output_log" \
       2> >(tee "$LOG_DIR/stderr.log" >&2)
   fi
@@ -484,11 +547,43 @@ do_execute() {
 
   # Map harness exit to structured exit code
   local exit_code="$harness_exit"
+  if [[ "$timeout_used" == true ]] && { [[ "$harness_exit" -eq 124 ]] || [[ "$harness_exit" -eq 137 ]]; }; then
+    exit_code=3
+    write_failfast_report "$exit_code" "Timed out" "Harness exceeded ${TIMEOUT_MINUTES} minutes."
+  fi
+
   # Exit codes 0, 1, 2, 3 pass through as-is (already structured).
   # 130/143 are handled by signal traps above.
   # Other non-zero codes map to 1 (agent error).
   if [[ "$exit_code" -gt 3 ]] && [[ "$exit_code" -ne 130 ]] && [[ "$exit_code" -ne 143 ]]; then
     exit_code=1
+  fi
+
+  # Fail-fast: don't silently succeed when a harness produces no usable output.
+  if [[ "$exit_code" -eq 0 ]]; then
+    case "$CLI_HARNESS" in
+      claude)
+        if [[ ! -f "$output_log" ]] || [[ ! -s "$output_log" ]]; then
+          exit_code=2
+          write_failfast_report "$exit_code" "No harness output captured" "Claude returned success but produced no stream-json events."
+        fi
+        ;;
+      opencode)
+        if [[ ! -f "$output_log" ]] || [[ ! -s "$output_log" ]]; then
+          exit_code=2
+          write_failfast_report "$exit_code" "No harness output captured" "OpenCode returned success but produced no JSON events."
+        elif detect_opencode_error_event "$output_log"; then
+          local msg=""
+          msg="$(extract_opencode_error_message "$output_log" 2>/dev/null || echo "")"
+          exit_code=1
+          if [[ -n "$msg" ]]; then
+            write_failfast_report "$exit_code" "OpenCode error event" "$msg"
+          else
+            write_failfast_report "$exit_code" "OpenCode error event" "See output log for details: $output_log"
+          fi
+        fi
+        ;;
+    esac
   fi
 
   # Derive files touched

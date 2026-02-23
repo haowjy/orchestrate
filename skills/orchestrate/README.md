@@ -27,8 +27,8 @@ All runs are launched via `run-agent/scripts/run-agent.sh`. A run is `model + sk
 RUNNER=../run-agent/scripts/run-agent.sh
 INDEX=../run-agent/scripts/run-index.sh
 
-"$RUNNER" --model claude-sonnet-4-6 --skills review \
-    --session my-session --label task-type=review \
+"$RUNNER" --agent reviewer \
+    --session my-session \
     -p "Review the auth changes"
 
 "$INDEX" show @latest

@@ -1,7 +1,7 @@
 ---
 name: orchestrate
 description: Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh.
-allowed-tools: Bash(orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(orchestrate/skills/run-agent/scripts/record-commit.sh *), Bash(orchestrate/skills/run-agent/scripts/log-inspect.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
+allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/run-index.sh *), Bash(*/run-agent/scripts/log-inspect.sh *), Bash(*/run-agent/scripts/load-model-guidance.sh *), Bash(*/orchestrate/scripts/load-skill-policy.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
 ---
 
 # Orchestrate — Multi-Model Supervisor
@@ -10,34 +10,58 @@ allowed-tools: Bash(orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(o
 
 ## Canonical Paths
 
-Source: `orchestrate/` (submodule/clone)
+Skill-local (portable across `.agents/skills` and `.claude/skills`):
 
-- skills: `orchestrate/skills/*/SKILL.md`
-- references: `orchestrate/references/*.md`
+- sibling skills (resolved by explicit name): `../<skill-name>/SKILL.md`
+- orchestration policy references: `references/*.md`
+- skill policy loader: `scripts/load-skill-policy.sh`
+- model guidance loader: `../run-agent/scripts/load-model-guidance.sh`
+- run explorer: `../run-agent/scripts/run-index.sh`
 
-Runtime: `.orchestrate/` (logs, session state — gitignored)
+Runtime: `.orchestrate/` (gitignored)
 
-- runs: `.orchestrate/runs/`
-- session: `.orchestrate/session/`
+- runs: `.orchestrate/runs/agent-runs/<run-id>/`
+- index: `.orchestrate/index/runs.jsonl`
 
 Runner path:
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=../run-agent/scripts/run-agent.sh
+INDEX=../run-agent/scripts/run-index.sh
 ```
+
+## Skill Set Policy
+
+There is **no hierarchy** of skills. Use a flat, explicit skill set as a recommendation baseline.
+
+1. Load active policy content via `scripts/load-skill-policy.sh` (default mode: `concat`).
+2. Resolve active skill names via `scripts/load-skill-policy.sh --mode skills`.
+3. Resolve each listed skill as `../<skill-name>/SKILL.md` and skip missing entries.
+4. Treat the resolved active skill set as the default recommendation for `--skills`.
+5. You may add other skills when the task clearly needs them.
+
+Policy file format:
+- One skill name per line (plain text) or bullet item (e.g., `- review`).
+- `#` comments are allowed.
+- Unknown skill names should be ignored.
 
 ## Skill Discovery
 
 At startup, discover available capabilities:
 
-1. List directories under `orchestrate/skills/`
-2. Read each `SKILL.md` frontmatter for `name:` and `description:`
-3. Match skills to the current task based on descriptions
+1. Load orchestration policy via `scripts/load-skill-policy.sh` (see Skill Set Policy above).
+2. Resolve only the listed skill names to `../<skill-name>/SKILL.md`.
+3. Read each resolved `SKILL.md` frontmatter for `name:` and `description:`.
+4. Match the current task against the resolved active skill set first, then add extras only when justified.
 
-Skills are your building blocks. You don't need named agent definitions — compose the right model + skills + prompt for each subtask dynamically.
+Skills are your building blocks. A run is `model + skills + prompt` — no named agent definitions needed.
 
 ## Model Selection
 
-Read the `model-guidance` skill (`orchestrate/skills/model-guidance/SKILL.md`) before choosing models. It explains:
+Load model guidance via `../run-agent/scripts/load-model-guidance.sh` before choosing models. This loader enforces precedence:
+- `../run-agent/references/default-model-guidance.md` is always loaded as the base
+- if any files exist under `../run-agent/references/model-guidance/*.md`, they are concatenated after the default
+
+Use the loaded guidance to decide:
 - Model strengths and weaknesses
 - Which model to pick for which task type
 - How to combine skills for variant behaviors
@@ -50,6 +74,8 @@ Your primary tool is `run-agent.sh`. Compose runs by picking:
 3. **Prompt** (`-p`) — what the subagent should do
 4. **Context files** (`-f`) — extra files appended to the prompt
 5. **Template vars** (`-v KEY=VALUE`) — injected into skill templates
+6. **Labels** (`--label KEY=VALUE`) — run metadata for filtering/grouping
+7. **Session** (`--session ID`) — group related runs in one orchestration pass
 
 Key flags:
 ```
@@ -58,10 +84,25 @@ Key flags:
 -p "prompt"          Task prompt
 -f path/to/file      Reference file (appended to prompt)
 -v KEY=VALUE         Template variable
---plan NAME          Plan shorthand (sets PLAN_FILE)
---slice NAME         Slice shorthand (sets SLICE_FILE, SLICES_DIR)
+--label KEY=VALUE    Run metadata label (repeatable)
+--session ID         Session grouping for related runs
+--task-type TYPE     Shorthand for --label task-type=TYPE
 -D brief|standard|detailed   Report detail level
 --dry-run            Show composed prompt without executing
+```
+
+## Run Explorer
+
+Use `run-index.sh` to inspect and manage runs:
+
+```bash
+"$INDEX" list                          # List recent runs
+"$INDEX" list --failed                 # List failed runs
+"$INDEX" show @latest                  # Show last run details
+"$INDEX" report @latest                # Read last run's report
+"$INDEX" stats --session $SESSION_ID   # Session statistics
+"$INDEX" continue @latest -p "fix X"   # Follow up on a run
+"$INDEX" retry @last-failed            # Retry a failed run
 ```
 
 ## Cardinal Rules
@@ -79,51 +120,40 @@ Key flags:
 2. Pick the best model for the subtask (via model-guidance)
 3. Pick the right skills to attach (via skill discovery)
 4. Launch via `run-agent.sh`
-5. Evaluate the subagent's output (read `report.md`)
+5. Evaluate the subagent's output (read `report.md` or use `run-index.sh report @latest`)
 6. Decide what to do next
 
-## Worked Example: Plan Execution
-
-One common flow (not the only flow):
+## Worked Example: Task Execution
 
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=../run-agent/scripts/run-agent.sh
+INDEX=../run-agent/scripts/run-index.sh
+SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
-# 1. Setup — derive plan name, create runtime dirs
-PLAN_NAME="$(git branch --show-current)/$(basename "$PLAN_FILE" .md)"
-export ORCHESTRATE_PLAN="$PLAN_NAME"
-mkdir -p ".orchestrate/runs/plans/$PLAN_NAME"/{.scratch/code/smoke,logs/agent-runs,slices}
-mkdir -p ".orchestrate/session/plans/$PLAN_NAME"/{handoffs,commits,slices}
-
-# 2. Plan-slice — use codex for precise acceptance criteria
-"$RUNNER" --model gpt-5.3-codex --skills plan-slice \
-    -v PLAN_FILE="$PLAN_FILE" \
-    -v SLICES_DIR=".orchestrate/runs/plans/$PLAN_NAME/slices" \
-    -p "Determine the next implementable slice from the plan."
-
-# 3. Implement — codex for cross-stack, sonnet for UI iteration
+# 1. Implement — codex for cross-stack, sonnet for UI iteration
 "$RUNNER" --model gpt-5.3-codex --skills smoke-test,scratchpad \
-    --plan "$PLAN_NAME" --slice slice-1
+    --session "$SESSION_ID" --label task-type=coding \
+    -p "Implement the feature described in the plan." \
+    -f path/to/plan.md
 
-# 4. Review — fan out to multiple model families for confidence
+# 2. Review — fan out to multiple model families for confidence
 "$RUNNER" --model gpt-5.3-codex --skills review \
-    --plan "$PLAN_NAME" --slice slice-1 &
+    --session "$SESSION_ID" --label task-type=review &
 "$RUNNER" --model claude-opus-4-6 --skills review \
-    --plan "$PLAN_NAME" --slice slice-1 &
+    --session "$SESSION_ID" --label task-type=review &
 wait
 # Read both reports, synthesize findings
 
-# 5. Commit — haiku for fast, clean commit messages
+# 3. Commit — haiku for fast, clean commit messages
 "$RUNNER" --model claude-haiku-4-5 \
-    --plan "$PLAN_NAME" --slice slice-1 \
-    -p "Stage and commit changes for this slice with a concise message."
+    --session "$SESSION_ID" --label task-type=ops \
+    -p "Stage and commit changes with a concise message."
 
-# 6. Record commit
-orchestrate/skills/run-agent/scripts/record-commit.sh \
-    --plan "$PLAN_NAME" --slice slice-1
+# 4. Check session stats
+"$INDEX" stats --session "$SESSION_ID"
 ```
 
-This is one common pipeline. Adapt freely: skip review for trivial changes, run research before implementing unfamiliar code, add adversarial testing for security-critical paths.
+Adapt freely: skip review for trivial changes, run research before implementing unfamiliar code, add adversarial testing for security-critical paths.
 
 ## Review Fan-Out
 
@@ -133,15 +163,6 @@ When to fan out:
 - **High risk** (auth, concurrency, data migration): 3 reviewers from distinct model families
 
 If reviewers disagree materially, run a tiebreak review with a different model.
-
-Fan-out pattern:
-```bash
-# Parallel review — PID-based log dirs keep them separate
-"$RUNNER" --model gpt-5.3-codex --skills review --slice slice-1 &
-"$RUNNER" --model claude-opus-4-6 --skills review --slice slice-1 &
-wait
-# Read reports from each, synthesize
-```
 
 ## Parallel Runs
 
@@ -156,41 +177,12 @@ wait
 ## Usage
 
 ```
-/orchestrate <plan-file> [--plan-name NAME]
-```
-
-### Setup Steps
-
-1. Parse plan file path and derive `{plan-name}`: `{branch}/{plan-filename}` (branch from `git branch --show-current`, filename without `.md`). Override with `--plan-name NAME`.
-2. Set `RUNS_ROOT=.orchestrate/runs/plans/{plan-name}` and `PLAN_ROOT=.orchestrate/session/plans/{plan-name}`
-3. **Export `ORCHESTRATE_PLAN={plan-name}`** — all `--slice` calls inherit this
-4. Create runtime dirs
-5. Discover available skills
-6. Read the plan to understand scope
-7. Begin the core loop
-
-### Handoff Snapshots
-
-Periodically (every 2-3 slices), save a handoff:
-
-```bash
-cat > ".orchestrate/session/plans/$PLAN_NAME/handoffs/latest.md" <<EOF
-# Handoff — $(date -u +"%Y-%m-%d %H:%M UTC")
-
-## Status
-{summary}
-
-## Completed
-{list of completed slices}
-
-## Next Steps
-{what should happen next}
-EOF
+/orchestrate [task description or plan file]
 ```
 
 ### Completion
 
 Stop when:
-- Plan-slice returns `ALL_DONE`
 - User's intent is fully satisfied
 - Unrecoverable failure (no progress after retry)
+- All subtasks in scope are done

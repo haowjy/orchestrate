@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# lib/exec.sh — CLI command building (argv array), execution, files-touched extraction.
+# lib/exec.sh — CLI command building (argv array), execution, structured exit codes.
 # Sourced by run-agent.sh; expects globals from the entrypoint.
 
-# ─── Build CLI Command (argv array) ──────────────────────────────────────────
-# Populates global CLI_CMD_ARGV array instead of building a string.
-# This avoids eval and shell-injection risks.
+# ─── Structured Exit Codes ────────────────────────────────────────────────────
+# 0 = success, 1 = agent error, 2 = infra error, 3 = timeout, 130 = SIGINT, 143 = SIGTERM
 
-# Normalize tool names for the target CLI harness.
-# Agent definitions may use inconsistent casing; Claude expects PascalCase names.
+# ─── Build CLI Command (argv array) ──────────────────────────────────────────
+
 normalize_claude_tool_token() {
   local token="$1"
   local base="$token"
@@ -53,55 +52,17 @@ normalize_tools_for_harness() {
         echo "$joined"
       fi
       ;;
-    codex)    echo "" ;;                                    # codex ignores tool allowlists
-    opencode) echo "" ;;                                    # opencode run has no allowlist flag
+    codex)    echo "" ;;
+    opencode) echo "" ;;
   esac
-}
-
-resolve_codex_home() {
-  # Respect explicit caller override.
-  if [[ -n "${CODEX_HOME:-}" ]]; then
-    echo "$CODEX_HOME"
-    return
-  fi
-
-  # Default Codex behavior writes under ~/.codex. Keep that default when it is
-  # actually writable so existing auth/session state continues to work.
-  if [[ -n "${HOME:-}" ]]; then
-    local default_codex_home="$HOME/.codex"
-    if [[ -d "$default_codex_home" ]]; then
-      local probe_file="$default_codex_home/.run-agent-write-probe-$$"
-      if touch "$probe_file" >/dev/null 2>&1; then
-        rm -f "$probe_file" 2>/dev/null || true
-        echo ""
-        return
-      fi
-    elif [[ ! -e "$default_codex_home" ]]; then
-      if mkdir -p "$default_codex_home" 2>/dev/null; then
-        echo ""
-        return
-      fi
-    fi
-  fi
-
-  # Sandbox-safe fallback for environments that block writes to HOME.
-  echo "${ORCHESTRATE_CODEX_HOME:-$RUNS_DIR/codex-home}"
 }
 
 build_cli_command() {
   local tool
   local normalized_tools
 
-  # Route model → CLI automatically: claude-* → claude, gpt-* → codex, else → opencode.
-  # ORCHESTRATE_DEFAULT_CLI can override this if set (e.g., force all to claude).
-  if [[ -n "${ORCHESTRATE_DEFAULT_CLI:-}" ]]; then
-    tool="$ORCHESTRATE_DEFAULT_CLI"
-  else
-    tool="$(route_model "$MODEL" 2>/dev/null || echo "")"
-  fi
+  tool="$(route_model "$MODEL" 2>/dev/null || echo "")"
 
-  # If route_model failed (unknown family) or CLI binary not installed, fall back:
-  # try the routed CLI first, then fall back to claude + FALLBACK_MODEL.
   if [[ -z "$tool" ]]; then
     echo "[run-agent] WARNING: Unknown model family '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
     tool="$FALLBACK_CLI"
@@ -112,10 +73,9 @@ build_cli_command() {
     MODEL="$FALLBACK_MODEL"
   fi
 
-  # Final check: the fallback CLI itself must exist.
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "ERROR: '$tool' CLI not found. Install it or try a different model with -m." >&2
-    return 1
+    return 2
   fi
 
   CLI_CMD_ARGV=()
@@ -123,36 +83,23 @@ build_cli_command() {
   normalized_tools="$(normalize_tools_for_harness "$tool" "$TOOLS")"
   case "$tool" in
     claude)
-      # CLAUDECODE= unsets nested session check (env sets it for the subprocess)
       CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --verbose --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
       ;;
     codex)
-      local codex_home
-      codex_home="$(resolve_codex_home)"
-      if [[ -n "$codex_home" ]]; then
-        mkdir -p "$codex_home" 2>/dev/null || true
-        CLI_CMD_ARGV=(env CODEX_HOME="$codex_home" codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
-      else
-        CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
-      fi
+      CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
       ;;
     opencode)
-      # opencode --format json emits structured JSON events on stdout.
-      # --print-logs mirrors progress/diagnostics to stderr for real-time visibility.
-      # Prompt text is passed as a positional arg at execution time.
-      # --variant maps effort levels. No tool allowlist support.
       local effective_model
       effective_model="$(strip_model_prefix "$MODEL")"
       CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --print-logs --variant "$EFFORT")
       ;;
     *)
       echo "ERROR: Unsupported CLI harness: $tool" >&2
-      return 1
+      return 2
       ;;
   esac
 }
 
-# Format the argv array as a display string for logging/dry-run output.
 format_cli_cmd() {
   local out=""
   for arg in "${CLI_CMD_ARGV[@]}"; do
@@ -162,7 +109,6 @@ format_cli_cmd() {
       out+="$arg "
     fi
   done
-  # Trim trailing space
   echo "${out% }"
 }
 
@@ -170,16 +116,23 @@ format_cli_cmd() {
 
 write_files_touched_from_log() {
   local output_log="$1"
-  local touched_file="$2"
+  local log_dir="$2"
   local extractor="$SCRIPT_DIR/extract-files-touched.sh"
 
   if [[ -x "$extractor" ]]; then
-    if ! "$extractor" "$output_log" "$touched_file"; then
-      echo "[run-agent] WARNING: files-touched extraction failed" >&2
-      echo "# extraction failed" > "$touched_file"
+    # Produce NUL-delimited canonical format
+    if ! "$extractor" "$output_log" "$log_dir/files-touched.nul" --nul 2>/dev/null; then
+      # Fallback: try without --nul for backward compat during transition
+      "$extractor" "$output_log" "$log_dir/files-touched.txt" 2>/dev/null || true
+      return
+    fi
+    # Derive newline-delimited from NUL-delimited
+    if [[ -f "$log_dir/files-touched.nul" ]]; then
+      tr '\0' '\n' < "$log_dir/files-touched.nul" > "$log_dir/files-touched.txt"
     fi
   else
-    : > "$touched_file"
+    : > "$log_dir/files-touched.txt"
+    : > "$log_dir/files-touched.nul"
   fi
 }
 
@@ -191,12 +144,21 @@ do_dry_run() {
 
   echo "═══ DRY RUN ═══"
   echo ""
-  echo "── Agent: ${AGENT_NAME:-ad-hoc}"
   echo "── Model: $MODEL ($(route_model "$MODEL" 2>/dev/null || echo "fallback"))"
   echo "── Effort: $EFFORT"
   echo "── Tools: $TOOLS"
   echo "── Report: $DETAIL"
   if [[ ${#SKILLS[@]} -gt 0 ]]; then echo "── Skills: ${SKILLS[*]}"; else echo "── Skills: none"; fi
+  if [[ -n "${SESSION_ID:-}" ]]; then echo "── Session: $SESSION_ID"; fi
+  if [[ "$HAS_LABELS" == true ]]; then
+    local k
+    echo "── Labels:"
+    for k in "${!LABELS[@]}"; do
+      echo "   - $k=${LABELS[$k]}"
+    done
+  else
+    echo "── Labels: none"
+  fi
   if [[ ${#REF_FILES[@]} -gt 0 ]]; then echo "── Ref files: ${REF_FILES[*]}"; else echo "── Ref files: none"; fi
   echo "── Working dir: $WORK_DIR"
   echo ""
@@ -211,33 +173,55 @@ do_dry_run() {
   echo "────────────────────────────────────────"
 }
 
-# ─── Execute ─────────────────────────────────────────────────────────────────
+# ─── Signal Handling ──────────────────────────────────────────────────────────
 
-auto_create_scope_dirs() {
-  # Auto-create scratch and log directories under the scope root so that
-  # agents and orchestrators don't have to mkdir manually before launching.
-  local scope_root
-  scope_root="$(infer_scope_root)"
+_run_interrupted=false
+_run_start_epoch=0
 
-  # Guard: never create dirs at filesystem root.
-  if [[ -z "$scope_root" || "$scope_root" == "/" ]]; then
-    return
+_handle_signal() {
+  local sig_code="$1"
+  _run_interrupted=true
+
+  # Write finalize row for observability before exiting
+  if [[ -n "${RUN_ID:-}" ]] && [[ -n "${LOG_DIR:-}" ]]; then
+    local duration=0
+    if [[ "$_run_start_epoch" -gt 0 ]]; then
+      local now_epoch
+      now_epoch="$(date +%s)"
+      duration=$((now_epoch - _run_start_epoch))
+    fi
+    append_finalize_row "$sig_code" "$duration" 2>/dev/null || true
   fi
 
-  mkdir -p "$scope_root/.scratch/code/smoke" 2>/dev/null || true
-  mkdir -p "$scope_root/logs/agent-runs" 2>/dev/null || true
+  exit "$sig_code"
 }
 
-do_execute() {
-  local cli_display
-  cli_display="$(format_cli_cmd)"
+# ─── Execute ─────────────────────────────────────────────────────────────────
 
-  # Set up logging (always on)
+do_execute() {
+  local cli_display output_log
+  cli_display="$(format_cli_cmd)"
+  output_log="$LOG_DIR/output.jsonl"
+
+  # Set up logging and write start index row for crash visibility
   setup_logging
   write_log_params "$cli_display"
 
-  # Auto-create scope directories (scratch, logs) so agents don't fail on missing dirs.
-  auto_create_scope_dirs
+  # Capture git HEAD before execution (best-effort)
+  HEAD_BEFORE=""
+  if command -v git >/dev/null 2>&1; then
+    HEAD_BEFORE="$(git -C "$WORK_DIR" rev-parse HEAD 2>/dev/null || echo "")"
+  fi
+
+  # Write start row immediately (crash visibility)
+  append_start_row
+
+  # Install signal traps
+  trap '_handle_signal 130' INT
+  trap '_handle_signal 143' TERM
+
+  # Record start time for duration tracking
+  _run_start_epoch="$(date +%s)"
 
   # Append report instruction now that LOG_DIR is known
   COMPOSED_PROMPT+="$(build_report_instruction "$LOG_DIR/report.md" "$DETAIL")"
@@ -245,52 +229,71 @@ do_execute() {
   # Save composed prompt
   echo "$COMPOSED_PROMPT" > "$LOG_DIR/input.md"
 
-  echo "[run-agent] Agent: ${AGENT_NAME:-ad-hoc} | Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
+  echo "[run-agent] Model: $MODEL | Effort: $EFFORT | Log: $LOG_DIR" >&2
 
   # Execute via argv array — no eval needed.
-  # stdout → output.json (structured JSON/JSONL), stderr → tee to terminal + stderr.log.
-  # Claude/Codex read prompt from stdin; OpenCode takes prompt as positional arg.
   cd "$WORK_DIR"
+  local harness_exit=0
   set +e
   if [[ "$CLI_HARNESS" == "opencode" ]]; then
     "${CLI_CMD_ARGV[@]}" "$COMPOSED_PROMPT" \
-      > "$LOG_DIR/output.json" \
+      > "$output_log" \
       2> >(tee "$LOG_DIR/stderr.log" >&2)
   else
     "${CLI_CMD_ARGV[@]}" <<< "$COMPOSED_PROMPT" \
-      > "$LOG_DIR/output.json" \
+      > "$output_log" \
       2> >(tee "$LOG_DIR/stderr.log" >&2)
   fi
-  EXIT_CODE=$?
+  harness_exit=$?
   set -e
 
-  # Derive touched files from this run's session log.
-  write_files_touched_from_log "$LOG_DIR/output.json" "$LOG_DIR/files-touched.txt"
+  # Map harness exit to structured exit code
+  local exit_code="$harness_exit"
+  # Exit codes 0, 1, 2, 3 pass through as-is (already structured).
+  # 130/143 are handled by signal traps above.
+  # Other non-zero codes map to 1 (agent error).
+  if [[ "$exit_code" -gt 3 ]] && [[ "$exit_code" -ne 130 ]] && [[ "$exit_code" -ne 143 ]]; then
+    exit_code=1
+  fi
 
-  # Append to orchestrate session index
-  update_session_index
+  # Derive files touched
+  write_files_touched_from_log "$output_log" "$LOG_DIR"
 
-  # ── Report output ──────────────────────────────────────────────────────────
-  # Always print report to stdout so the orchestrator can read it.
-  # If the subagent wrote report.md, cat it. Otherwise, emit a diagnostic
-  # summary so the caller never gets silent zero output.
+  # Report fallback: if no report.md, try to extract last assistant message
+  if [[ ! -f "$LOG_DIR/report.md" ]] || [[ ! -s "$LOG_DIR/report.md" ]]; then
+    local fallback_extractor="$SCRIPT_DIR/extract-report-fallback.sh"
+    if [[ -x "$fallback_extractor" ]]; then
+      "$fallback_extractor" "$CLI_HARNESS" "$output_log" "$LOG_DIR/stderr.log" "$exit_code" \
+        > "$LOG_DIR/report.md" 2>/dev/null || true
+    fi
+  fi
+
+  # Compute duration
+  local end_epoch duration_seconds
+  end_epoch="$(date +%s)"
+  duration_seconds=$((_run_start_epoch > 0 ? end_epoch - _run_start_epoch : 0))
+
+  # Write finalize row
+  EXIT_CODE="$exit_code"
+  append_finalize_row "$exit_code" "$duration_seconds"
+
+  # Print report to stdout for the orchestrator
   if [[ -f "$LOG_DIR/report.md" ]] && [[ -s "$LOG_DIR/report.md" ]]; then
     cat "$LOG_DIR/report.md"
   else
     echo "---" >&2
     echo "[run-agent] WARNING: Agent did not produce a report at $LOG_DIR/report.md" >&2
-    echo "[run-agent] Exit code: $EXIT_CODE" >&2
-    echo "[run-agent] Output log: $LOG_DIR/output.json" >&2
-    # Print the last 40 lines of output.json to stderr for diagnostics.
-    if [[ -f "$LOG_DIR/output.json" ]] && [[ -s "$LOG_DIR/output.json" ]]; then
+    echo "[run-agent] Exit code: $exit_code" >&2
+    echo "[run-agent] Output log: $output_log" >&2
+    if [[ -f "$output_log" ]] && [[ -s "$output_log" ]]; then
       echo "[run-agent] Last 40 lines of output:" >&2
-      tail -n 40 "$LOG_DIR/output.json" >&2
+      tail -n 40 "$output_log" >&2
     else
       echo "[run-agent] Output log is empty — the CLI may have failed to start." >&2
     fi
     echo "---" >&2
   fi
 
-  echo "[run-agent] Done (exit=$EXIT_CODE). Log: $LOG_DIR" >&2
-  exit $EXIT_CODE
+  echo "[run-agent] Done (exit=$exit_code, duration=${duration_seconds}s). Log: $LOG_DIR" >&2
+  exit "$exit_code"
 }

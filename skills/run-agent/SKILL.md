@@ -5,16 +5,17 @@ description: Agent execution engine — composes prompts, routes models, and wri
 
 # Run-Agent — Execution Engine
 
-Single entry point for agent execution. Composes a prompt from model + skills + task, routes to the correct CLI (`claude`, `codex`, `opencode`), and logs each run.
+Single entry point for agent execution. A run is `model + skills + prompt` — no "agent" abstraction. Routes to the correct CLI (`claude`, `codex`, `opencode`), logs everything, and writes structured index entries.
 
-Skills source: `orchestrate/skills/`. Runtime artifacts: `.orchestrate/`.
+Skills source: sibling skills (`../`). Runtime artifacts: `.orchestrate/`.
 
 Runner path:
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=scripts/run-agent.sh
+INDEX=scripts/run-index.sh
 ```
 
-## Ad-Hoc Mode (Primary)
+## Run Composition
 
 Compose runs dynamically by specifying model, skills, and prompt:
 
@@ -26,37 +27,19 @@ Compose runs dynamically by specifying model, skills, and prompt:
 # Model + prompt (no skills)
 "$RUNNER" --model gpt-5.3-codex -p "Investigate the failing collab tests"
 
-# With plan/slice context
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test,scratchpad \
-    --plan my-plan --slice slice-1
+# With labels and session grouping
+"$RUNNER" --model gpt-5.3-codex --skills smoke-test \
+    --session my-session --label task-type=coding --label ticket=PAY-123 \
+    -p "Implement the feature"
+
+# With template variables for project-specific paths
+"$RUNNER" --model gpt-5.3-codex \
+    -v PLAN_FILE=path/to/plan.md -v SLICE_FILE=path/to/slice.md \
+    -p "Implement {{SLICE_FILE}} from {{PLAN_FILE}}"
 
 # Dry run — see composed prompt + CLI command without executing
 "$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth" --dry-run
 ```
-
-## Agent Definitions (Optional Legacy)
-
-If `agents/*.md` files exist under `.orchestrate/agents/` or the run-agent agents directory, you can still reference them by name:
-
-```bash
-"$RUNNER" review --plan my-plan --slice slice-1
-"$RUNNER" implement -m claude-opus-4-6  # override model
-```
-
-Agent lookup precedence:
-1. `ORCHESTRATE_AGENT_DIR/<name>.md` (if set)
-2. `.orchestrate/agents/<name>.md`
-
-This is a backwards-compatibility mechanism. The orchestrator should prefer ad-hoc composition via `--model` + `--skills` + `-p`.
-
-## Plan/Slice Shorthand
-
-- `--plan X` sets `PLAN_FILE=.orchestrate/runs/plans/X/plan.md`
-- `--plan X --slice Y` sets:
-  - `SLICE_FILE=.orchestrate/runs/plans/X/slices/Y/slice.md`
-  - `SLICES_DIR=.orchestrate/runs/plans/X/slices/Y`
-
-`--slice` requires `--plan` or `ORCHESTRATE_PLAN` env var.
 
 ## Key Flags
 
@@ -66,33 +49,47 @@ This is a backwards-compatibility mechanism. The orchestrator should prefer ad-h
 | `--skills a,b,c` | Skills to compose into the prompt |
 | `-p "prompt"` | Task prompt |
 | `-f path/to/file` | Reference file appended to prompt |
-| `-v KEY=VALUE` | Template variable |
-| `--plan NAME` | Plan shorthand |
-| `--slice NAME` | Slice shorthand |
+| `-v KEY=VALUE` | Template variable substitution (repeatable) |
+| `--session ID` | Session ID for grouping related runs |
+| `--label KEY=VALUE` | Run metadata label (repeatable) |
+| `--task-type TYPE` | Shorthand for `--label task-type=TYPE` (default: `coding`) |
 | `-D brief\|standard\|detailed` | Report detail level (default: `standard`) |
+| `--continue-run REF` | Continue a previous run's harness session |
+| `--fork` | Fork the session on continuation (default where supported) |
+| `--in-place` | Resume without forking (always for Codex) |
 | `--dry-run` | Show composed prompt without executing |
 | `-C DIR` | Working directory for subprocess |
 
 ## Output Artifacts
 
-Each run writes to `{scope-root}/logs/agent-runs/{label}-{PID}/`:
+Each run writes to `.orchestrate/runs/agent-runs/<run-id>/`:
 
-- `params.json` — run parameters
+- `params.json` — run parameters and metadata
 - `input.md` — composed prompt
-- `output.json` — raw CLI output
+- `output.jsonl` — raw CLI output (stream-json or JSONL)
 - `stderr.log` — CLI diagnostics (also streamed to terminal)
-- `report.md` — written by the subagent
-- `files-touched.txt` — derived from output.json
+- `report.md` — written by the subagent (or extracted as fallback)
+- `files-touched.nul` — NUL-delimited file paths (canonical machine format)
+- `files-touched.txt` — newline-delimited file paths (human-readable)
 
-## Scope Rules
+## Run Index
 
-Scope root is inferred from template variables:
-1. `SLICE_FILE` → slice directory
-2. `SLICES_DIR` → slices directory
-3. `PLAN_FILE` → plan directory
-4. fallback: `.orchestrate/runs/project`
+Two-row append-only index at `.orchestrate/index/runs.jsonl`:
+- **Start row** (written before execution): `status: "running"` — provides crash visibility.
+- **Finalize row** (written after execution): `status: "completed"|"failed"` with exit code, duration, token usage, git metadata.
 
-Parallel runs are safe — PID-based log dirs keep them separate.
+A start row with no matching finalize row means the run crashed or is still in progress.
+
+## Structured Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Agent/model error (bad output, task failure) |
+| 2 | Infrastructure error (CLI not found, harness crash) |
+| 3 | Timeout |
+| 130 | Interrupted (SIGINT / user cancel) |
+| 143 | Terminated (SIGTERM) |
 
 ## Model Routing
 
@@ -102,21 +99,34 @@ Parallel runs are safe — PID-based log dirs keep them separate.
 | `gpt-*`, `o1*`, `o3*`, `o4*`, `codex*` | Codex (`codex exec`) |
 | `opencode-*`, `provider/model` | OpenCode (`opencode run`) |
 
-Override with `ORCHESTRATE_DEFAULT_CLI`.
+Routing is automatic from the selected model.
 
-## Environment Variables
+## Run Explorer CLI
 
-| Variable | Description |
-|----------|-------------|
-| `ORCHESTRATE_ROOT` | Override orchestrate root (default: `<repo>/.orchestrate`) |
-| `ORCHESTRATE_PLAN` | Default plan name for `--slice` shorthand |
-| `ORCHESTRATE_DEFAULT_CLI` | Force all routing to a specific CLI |
-| `ORCHESTRATE_AGENT_DIR` | Override agent definition directory |
-| `ORCHESTRATE_CODEX_HOME` | Codex state dir fallback |
+`run-index.sh` provides index-based run inspection:
+
+```bash
+"$INDEX" list                          # List recent runs
+"$INDEX" list --failed --json          # Failed runs as JSON
+"$INDEX" show @latest                  # Show last run details
+"$INDEX" report @latest                # Read last run's report
+"$INDEX" logs @latest --tools          # Tool call summary
+"$INDEX" files @latest                 # Files touched
+"$INDEX" stats                         # Aggregate statistics
+"$INDEX" continue @latest -p "fix X"   # Continue a run's session
+"$INDEX" retry @last-failed            # Retry a failed run
+"$INDEX" maintain --compact            # Archive old index entries
+```
+
+Run references: full ID, unique prefix (8+ chars), `@latest`, `@last-failed`, `@last-completed`.
 
 ## Helper Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `record-commit.sh --plan NAME [--slice NAME]` | Record latest commit |
-| `log-inspect.sh <output.json> [summary\|tools\|errors\|files]` | Inspect run logs |
+| `run-index.sh` | Run explorer CLI (list, show, report, logs, files, stats, continue, retry, maintain) |
+| `log-inspect.sh` | Inspect run logs (summary, tools, errors, files, search) |
+| `extract-files-touched.sh` | Extract file paths from run output |
+| `extract-harness-session-id.sh` | Extract harness session/thread ID from output |
+| `extract-report-fallback.sh` | Extract last assistant message as report fallback |
+| `load-model-guidance.sh` | Load model guidance with override precedence |

@@ -68,7 +68,6 @@ test_init_dirs_created() {
   local workdir="$test_tmp/work-init-dirs"
   mkdir -p "$workdir"
 
-  ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
 
   # Verify .orchestrate runtime dirs were created under the working repository root
@@ -100,39 +99,6 @@ EOF
   assert_contains "$output" "Project custom agent." "project-local custom agent prompt should be used"
 }
 
-test_env_agent_dir_takes_precedence() {
-  local test_tmp="$1"
-  local workdir="$test_tmp/work-env-agent"
-  local env_agents="$test_tmp/env-agents"
-  mkdir -p "$workdir/.orchestrate/agents" "$env_agents"
-
-  cat > "$workdir/.orchestrate/agents/custom.md" <<'EOF'
----
-name: custom
-description: project custom
-model: gpt-5.3-codex
----
-Project custom agent.
-EOF
-
-  cat > "$env_agents/custom.md" <<'EOF'
----
-name: custom
-description: env custom
-model: claude-sonnet-4-6
----
-Env custom agent.
-EOF
-
-  local output
-  output="$(
-    ORCHESTRATE_AGENT_DIR="$env_agents" PATH="$test_tmp/bin:$PATH" "$RUNNER" custom -C "$workdir" --dry-run
-  )"
-
-  assert_contains "$output" "── Model: claude-sonnet-4-6 (claude)" "ORCHESTRATE_AGENT_DIR should override project-local agent"
-  assert_contains "$output" "Env custom agent." "env-specified agent prompt should be used"
-}
-
 test_claude_tool_normalization() {
   local test_tmp="$1"
   local output
@@ -148,7 +114,6 @@ test_log_label_sanitized_with_pid() {
   local workdir="$test_tmp/work-log-sanitize"
   mkdir -p "$workdir"
 
-  ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model ../../tmp/x/y --prompt hi -C "$workdir" >/dev/null 2>&1
 
@@ -168,7 +133,6 @@ test_session_index_written() {
   local workdir="$test_tmp/work-session-index"
   mkdir -p "$workdir"
 
-  ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi -C "$workdir" >/dev/null 2>&1
 
@@ -184,7 +148,6 @@ test_plan_slice_shorthand_uses_runs_dir_scope() {
   local workdir="$test_tmp/work-plan-slice-scope"
   mkdir -p "$workdir"
 
-  ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan --slice unit-slice -C "$workdir" >/dev/null 2>&1
 
@@ -199,7 +162,6 @@ test_plan_shorthand_preserves_plan_name() {
   local workdir="$test_tmp/work-plan-scope"
   mkdir -p "$workdir"
 
-  ORCHESTRATE_DEFAULT_CLI=codex \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --model gpt-5.3-codex --prompt hi --plan unit-plan-only -C "$workdir" >/dev/null 2>&1
 
@@ -210,14 +172,7 @@ test_plan_shorthand_preserves_plan_name() {
 test_scope_root_template_var_injected() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-scope-root-var"
-  mkdir -p "$workdir/.orchestrate/skills/research"
-  cat > "$workdir/.orchestrate/skills/research/SKILL.md" <<'EOF'
----
-name: research
-description: test scope-root interpolation
----
-Write notes to {{SCOPE_ROOT}}/.scratch/research.md
-EOF
+  mkdir -p "$workdir"
 
   local expected_scope="$workdir/.orchestrate/runs/project"
 
@@ -226,7 +181,7 @@ EOF
     PATH="$test_tmp/bin:$PATH" "$RUNNER" --skills research --prompt hi --dry-run -C "$workdir"
   )"
 
-  assert_contains "$output" "$expected_scope/.scratch/research.md" "research prompt should resolve SCOPE_ROOT under .orchestrate/runs/project"
+  assert_contains "$output" "$expected_scope/.scratch/" "research prompt should resolve SCOPE_ROOT under .orchestrate/runs/project"
 }
 
 main() {
@@ -239,7 +194,6 @@ main() {
   test_missing_option_value_is_friendly "$test_tmp"
   test_init_dirs_created "$test_tmp"
   test_project_local_orchestrate_agent_resolved "$test_tmp"
-  test_env_agent_dir_takes_precedence "$test_tmp"
   test_claude_tool_normalization "$test_tmp"
   test_log_label_sanitized_with_pid "$test_tmp"
   test_session_index_written "$test_tmp"

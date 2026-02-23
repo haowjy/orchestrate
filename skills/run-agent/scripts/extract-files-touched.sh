@@ -3,18 +3,31 @@
 # Uses structured JSON extraction when possible, with text-pattern fallback.
 #
 # Usage:
-#   scripts/extract-files-touched.sh <output-log> [output-file]
+#   extract-files-touched.sh <output-log> [output-file] [--nul]
+#
+# When --nul is passed, output is NUL-delimited (canonical machine-readable format).
+# Otherwise output is newline-delimited (human-readable).
 
 set -euo pipefail
 
-OUTPUT_LOG="${1:?Usage: scripts/extract-files-touched.sh <output-log> [output-file]}"
+OUTPUT_LOG="${1:?Usage: extract-files-touched.sh <output-log> [output-file] [--nul]}"
 OUTPUT_FILE="${2:-/dev/stdout}"
+NUL_MODE=false
+if [[ "${3:-}" == "--nul" ]] || [[ "${2:-}" == "--nul" ]]; then
+  NUL_MODE=true
+  # If --nul was the second arg, output goes to stdout
+  if [[ "${2:-}" == "--nul" ]]; then
+    OUTPUT_FILE="/dev/stdout"
+  fi
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR")"
 
 TMP_TEXT="$(mktemp)"
 TMP_RAW_PATHS="$(mktemp)"
-trap 'rm -f "$TMP_TEXT" "$TMP_RAW_PATHS"' EXIT
+TMP_SORTED="$(mktemp)"
+trap 'rm -f "$TMP_TEXT" "$TMP_RAW_PATHS" "$TMP_SORTED"' EXIT
 
 # Seed with raw log text (handles non-JSON and error output).
 cat "$OUTPUT_LOG" > "$TMP_TEXT"
@@ -68,11 +81,17 @@ awk -v root="$REPO_ROOT/" '
   if (path ~ /[[:space:]]/) next
   if (path ~ /^(true|false|null)$/) next
 
-  # Reject absolute paths (not repo-relative) and common dependency/build dirs.
   if (path ~ /^\//) next
   if (path ~ /^(node_modules|vendor|\.git|__pycache__|dist|build|target)\//) next
 
-  # Accept any remaining path with a directory separator or file extension.
   if (path ~ /\// || path ~ /\.[a-zA-Z0-9]+$/) { print path; next }
 }
-' "$TMP_RAW_PATHS" | sort -u > "$OUTPUT_FILE"
+' "$TMP_RAW_PATHS" | sort -u > "$TMP_SORTED"
+
+# Output in requested format
+if [[ "$NUL_MODE" == true ]]; then
+  # NUL-delimited output
+  tr '\n' '\0' < "$TMP_SORTED" > "$OUTPUT_FILE"
+else
+  cat "$TMP_SORTED" > "$OUTPUT_FILE"
+fi

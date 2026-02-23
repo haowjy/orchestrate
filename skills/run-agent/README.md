@@ -1,92 +1,72 @@
 # Run-Agent — Execution Engine
 
-Single entry point for agent execution. Composes prompts from model + skills + task, routes to the correct CLI tool, and logs each run.
+Single entry point for agent execution. A run is `model + skills + prompt` — no "agent" abstraction. Routes to the correct CLI tool, logs each run, and writes structured index entries.
 
-Skills source: `orchestrate/skills/`. Runtime artifacts: `.orchestrate/`.
+Skills source: sibling skills (`../`). Runtime artifacts: `.orchestrate/` from the repo root.
+
+No environment variables control runtime behavior — all configuration is via explicit flags.
 
 ## Runner
 
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=scripts/run-agent.sh
+INDEX=scripts/run-index.sh
 ```
 
 ## Quick Start
 
 ```bash
-# Ad-hoc: model + skills + prompt (primary mode)
-"$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review these changes"
+# Model + skills + prompt
+"$RUNNER" --model gpt-5.3-codex --skills review -p "Review these changes"
 
-# Ad-hoc with plan/slice context
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test,scratchpad \
-    --plan demo --slice slice-1
-
-# Named agent (optional legacy — if agents/*.md files exist)
-"$RUNNER" review --plan demo --slice slice-1
+# With labels and session grouping
+"$RUNNER" --model gpt-5.3-codex --skills smoke-test \
+    --session my-session --label task-type=coding \
+    -p "Implement the feature"
 
 # Dry run — see composed prompt without executing
 "$RUNNER" --model gpt-5.3-codex --skills review --dry-run -p "Review auth"
+
+# Inspect runs
+"$INDEX" list
+"$INDEX" show @latest
+"$INDEX" stats
 ```
 
 ## How It Works
 
-1. Parse model, skills, prompt, and context flags
+1. Parse model, skills, prompt, labels, session, and context flags
 2. Route model to the correct CLI (`claude`, `codex`, `opencode`)
-3. Load skill bodies from `orchestrate/skills/*/SKILL.md`
+3. Load selected skill bodies from `../<skill-name>/SKILL.md`
 4. Compose the final prompt (skills + template vars + reference files + task prompt)
-5. Execute the CLI command
-6. Log artifacts to `{scope-root}/logs/agent-runs/{label}-{PID}/`
+5. Write start index row (crash visibility)
+6. Execute the CLI command
+7. Write finalize index row with exit code, duration, git metadata, token usage
+8. Log artifacts to `.orchestrate/runs/agent-runs/<run-id>/`
 
 ## Output Artifacts
 
-Each run writes:
-- `params.json` — run parameters
+Each run writes to `.orchestrate/runs/agent-runs/<run-id>/`:
+- `params.json` — run parameters and metadata
 - `input.md` — composed prompt
-- `output.json` — raw CLI output
+- `output.jsonl` — raw CLI output (stream-json or JSONL)
 - `stderr.log` — CLI diagnostics
-- `report.md` — written by the subagent
-- `files-touched.txt` — derived from output.json
+- `report.md` — written by the subagent (or extracted as fallback)
+- `files-touched.nul` — NUL-delimited file paths (canonical format)
+- `files-touched.txt` — newline-delimited file paths (human-readable)
 
-Location:
-- Ad-hoc: `.orchestrate/runs/project/logs/agent-runs/...`
-- Plan/slice: `.orchestrate/runs/plans/<plan>/slices/<slice>/logs/agent-runs/...`
-
-## Agent Definitions (Optional)
-
-If you want pre-configured agent templates, create `.orchestrate/agents/<name>.md` with YAML frontmatter:
-
-```yaml
----
-name: my-agent
-description: What this agent does
-model: claude-sonnet-4-6
-effort: high
-tools: Read,Edit,Write,Bash,Glob,Grep
-skills:
-  - review
----
-
-Your prompt template here. Use {{TEMPLATE_VARS}} for dynamic values.
-```
-
-The orchestrator prefers dynamic composition (`--model` + `--skills` + `-p`) over static agent definitions. Agent files are a convenience for frequently-used combinations.
+Index: `.orchestrate/index/runs.jsonl` (two rows per run: start + finalize)
 
 ## Helper Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/record-commit.sh` | Record latest commit for a plan/slice |
-| `scripts/log-inspect.sh` | Inspect run logs without loading full output |
-| `scripts/extract-files-touched.sh` | Parse touched files from a run log |
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `ORCHESTRATE_ROOT` | Override orchestrate root (default: `<repo>/.orchestrate`) |
-| `ORCHESTRATE_PLAN` | Default plan name for `--slice` shorthand |
-| `ORCHESTRATE_DEFAULT_CLI` | Force all routing to a specific CLI |
-| `ORCHESTRATE_AGENT_DIR` | Override agent definition directory |
-| `ORCHESTRATE_CODEX_HOME` | Codex state dir fallback |
+| `run-index.sh` | Run explorer CLI (list, show, report, logs, files, stats, continue, retry, maintain) |
+| `log-inspect.sh` | Inspect run logs without loading full output |
+| `extract-files-touched.sh` | Parse touched files from a run log |
+| `extract-harness-session-id.sh` | Extract harness session/thread ID from output |
+| `extract-report-fallback.sh` | Extract last assistant message as report fallback |
+| `load-model-guidance.sh` | Load model guidance with override precedence |
 
 ## Tests
 

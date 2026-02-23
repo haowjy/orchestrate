@@ -7,6 +7,20 @@ description: Model tendencies and selection guidance for orchestration decisions
 
 Reference for choosing the right model and skill combination. The orchestrator reads this when deciding what to launch.
 
+## Source of Truth
+
+Model guidance should be loaded through the run-agent resource loader:
+
+```bash
+../run-agent/scripts/load-model-guidance.sh
+```
+
+Precedence (enforced by script):
+- if any files exist under `../run-agent/references/model-guidance/*.md`, use those
+- otherwise use `../run-agent/references/default-model-guidance.md`
+
+This SKILL.md is a compatibility guide; prefer loader output for active guidance.
+
 ## Model Tendencies
 
 | Model | Strong At | Weak At |
@@ -45,7 +59,7 @@ Skills are composable building blocks. Combine them to create variant behaviors 
 ### Examples
 
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
+RUNNER=../run-agent/scripts/run-agent.sh
 
 # Adversarial review — sonnet with review + smoke-test skills
 "$RUNNER" --model claude-sonnet-4-6 --skills review,smoke-test \

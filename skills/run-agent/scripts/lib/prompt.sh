@@ -3,7 +3,7 @@
 # Sourced by run-agent.sh; expects globals from the entrypoint.
 
 # ─── Skill Loading ───────────────────────────────────────────────────────────
-# Reads SKILL.md, strips YAML frontmatter, returns body.
+# Reads SKILL.md, strips YAML frontmatter, returns body with source path annotation.
 
 load_skill() {
   local name="$1"
@@ -13,6 +13,10 @@ load_skill() {
     echo "ERROR: Skill not found: $skill_file" >&2
     return 1
   fi
+
+  # Emit source path so the subagent can resolve relative references
+  echo "Loaded from: $skill_file"
+  echo ""
 
   # Strip YAML frontmatter (--- ... ---)
   awk '
@@ -86,6 +90,17 @@ build_skills_json() {
   echo "[$json]"
 }
 
+build_labels_json() {
+  local json=""
+  local key
+
+  for key in "${!LABELS[@]}"; do
+    [[ -n "$json" ]] && json+=", "
+    json+="\"$(json_escape "$key")\":\"$(json_escape "${LABELS[$key]}")\""
+  done
+  echo "{$json}"
+}
+
 # ─── Compose Prompt ──────────────────────────────────────────────────────────
 
 compose_prompt() {
@@ -110,7 +125,6 @@ compose_prompt() {
   if [[ ${#REF_FILES[@]} -gt 0 ]]; then
     composed+=$'\n'"# Reference Files"$'\n\n'
     for ref in "${REF_FILES[@]}"; do
-      # Apply template vars to paths too
       local resolved_ref="$ref"
       if [[ "$HAS_VARS" == true ]]; then
         resolved_ref="$(apply_template_vars "$ref")"

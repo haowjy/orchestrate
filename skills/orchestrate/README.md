@@ -1,38 +1,62 @@
 # Orchestrate Skill
 
-Supervisor loop that reads a plan and autonomously launches agents to implement it — planning slices, writing code, reviewing, fixing issues, and committing.
+Multi-model supervisor that discovers available skills, picks the right model for each subtask, and composes runs dynamically via `run-agent.sh`.
 
 ## How It Works
 
 The orchestrator is a **flexible loop**, not a rigid pipeline:
 
-```
-[research] -> plan-slice -> implement -> review -> (clean? commit : fix -> review) -> next slice
-```
-
-You write a plan (markdown). The orchestrator reads it and loops through agents until complete.
+1. Understand what needs to happen
+2. Pick the best model (via model-guidance)
+3. Pick the right skills to attach
+4. Launch via `run-agent.sh` with labels and session grouping
+5. Evaluate output (read reports via `run-index.sh`)
+6. Decide what to do next
 
 ## Usage
 
 ```
-/orchestrate <plan-file> [--plan-name NAME]
+/orchestrate [task description or plan file]
 ```
 
-## Agent Execution
+## Run Composition
 
-All agents are launched via `run-agent/scripts/run-agent.sh`. See the `run-agent` skill for:
-- Agent definitions and formats (`run-agent/agents/`)
-- Script documentation (`run-agent/scripts/`)
-- Environment variables and configuration
+All runs are launched via `run-agent/scripts/run-agent.sh`. A run is `model + skills + prompt`.
 
-## Agent Selection
+```bash
+RUNNER=../run-agent/scripts/run-agent.sh
+INDEX=../run-agent/scripts/run-index.sh
 
-See the `model-guidance` skill for guidance on when to use each agent variant (implement, review, research, etc.).
+"$RUNNER" --model claude-sonnet-4-6 --skills review \
+    --session my-session --label task-type=review \
+    -p "Review the auth changes"
 
-## Pipeline Details
+"$INDEX" show @latest
+```
 
-See `SKILL.md` for the full supervisor loop documentation including:
-- Plan runtime directory structure
-- Step-by-step pipeline (setup → plan-slice → implement → review → commit → loop)
-- Handoff snapshots
-- Research (optional Step 0)
+## Model Selection
+
+See `run-agent/scripts/load-model-guidance.sh` and `run-agent/references/default-model-guidance.md`.
+
+## Skill Set Configuration
+
+Orchestrate uses a flat, explicit recommended skill set loaded by:
+
+```bash
+scripts/load-skill-policy.sh
+```
+
+Policy precedence:
+- If any non-default `references/*.md` files exist (besides README.md), they replace `references/default.md`.
+- Otherwise `references/default.md` is used.
+- Policy is filtered to only include actually-installed skills.
+
+To resolve normalized skill names:
+
+```bash
+scripts/load-skill-policy.sh --mode skills
+```
+
+## Details
+
+See `SKILL.md` for the full supervisor loop documentation.

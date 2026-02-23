@@ -2,21 +2,24 @@
 # install.sh — post-clone/submodule setup for orchestrate
 #
 # Copies skills into .agents/skills/ and .claude/skills/ under the workspace root.
-#
-# On first run: copies all skill directories.
-# On re-run: overwrites orchestrate-defined files, preserves user additions.
+# Reads the skill list from MANIFEST — only core skills are installed by default.
 #
 # Usage:
 #   bash orchestrate/install.sh [OPTIONS]
 #
 # Options:
-#   --workspace DIR   Project root (default: auto-detect from git root)
+#   --workspace DIR           Project root (default: auto-detect from git root)
+#   --include skill1,skill2   Install specific optional skills alongside core
+#   --all                     Install all skills from the manifest
+#   -h, --help                Show this help
 #
 # Safe to re-run (idempotent). User-added files are never deleted.
 
 set -euo pipefail
 
 WORKSPACE=""
+INCLUDE_SKILLS=""
+INSTALL_ALL=false
 
 # --- Parse arguments ---
 
@@ -24,6 +27,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --workspace)
       WORKSPACE="$2"; shift 2
+      ;;
+    --include)
+      INCLUDE_SKILLS="$2"; shift 2
+      ;;
+    --all)
+      INSTALL_ALL=true; shift
       ;;
     -h|--help)
       sed -n '2,/^$/{ s/^# //; s/^#$//; p }' "$0"
@@ -42,12 +51,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "$WORKSPACE" ]]; then
   PROJECT_ROOT="$(cd "$WORKSPACE" && pwd)"
 else
-  # Find git root of the *parent* project (not orchestrate's own repo)
   find_project_root() {
     local dir="$SCRIPT_DIR"
     while [[ "$dir" != "/" ]]; do
       if [[ -d "$dir/.git" || -f "$dir/.git" ]]; then
-        # Skip orchestrate's own git root
         if [[ "$dir" != "$SCRIPT_DIR" ]]; then
           echo "$dir"
           return 0
@@ -66,8 +73,82 @@ else
 fi
 
 SKILLS_SRC="$SCRIPT_DIR/skills"
+MANIFEST="$SCRIPT_DIR/MANIFEST"
 
 echo "Workspace: $PROJECT_ROOT"
+
+# --- Read manifest ---
+
+if [[ ! -f "$MANIFEST" ]]; then
+  echo "Error: MANIFEST not found at $MANIFEST" >&2
+  exit 1
+fi
+
+# Parse manifest: core skills (before blank line / "Available" comment) and optional skills (after).
+CORE_SKILLS=()
+OPTIONAL_SKILLS=()
+in_optional=false
+
+while IFS= read -r line; do
+  # Strip comments and whitespace
+  line="${line%%#*}"
+  line="$(echo "$line" | xargs)"
+  [[ -z "$line" ]] && continue
+
+  # Detect transition to optional section
+  if [[ "$in_optional" == false ]]; then
+    # Core skills are the first non-comment entries until we hit an "Available" marker
+    # or a skill that isn't orchestrate/run-agent
+    if [[ "$line" == "orchestrate" ]] || [[ "$line" == "run-agent" ]]; then
+      CORE_SKILLS+=("$line")
+    else
+      in_optional=true
+      OPTIONAL_SKILLS+=("$line")
+    fi
+  else
+    OPTIONAL_SKILLS+=("$line")
+  fi
+done < "$MANIFEST"
+
+# Build install list
+INSTALL_LIST=("${CORE_SKILLS[@]}")
+
+if [[ "$INSTALL_ALL" == true ]]; then
+  INSTALL_LIST+=("${OPTIONAL_SKILLS[@]}")
+elif [[ -n "$INCLUDE_SKILLS" ]]; then
+  IFS=',' read -ra requested <<< "$INCLUDE_SKILLS"
+  for req in "${requested[@]}"; do
+    req="$(echo "$req" | xargs)"
+    [[ -z "$req" ]] && continue
+
+    # Validate it's in the manifest
+    found=false
+    for opt in "${OPTIONAL_SKILLS[@]}"; do
+      if [[ "$opt" == "$req" ]]; then
+        found=true
+        break
+      fi
+    done
+
+    if [[ "$found" == true ]]; then
+      INSTALL_LIST+=("$req")
+    else
+      echo "Warning: '$req' is not in the manifest optional skills list. Skipping." >&2
+    fi
+  done
+fi
+
+echo ""
+echo "Core skills: ${CORE_SKILLS[*]}"
+if [[ "$INSTALL_ALL" == true ]]; then
+  echo "Installing: ALL (${#INSTALL_LIST[@]} skills)"
+elif [[ -n "$INCLUDE_SKILLS" ]]; then
+  echo "Installing: core + $INCLUDE_SKILLS (${#INSTALL_LIST[@]} skills)"
+else
+  echo "Installing: core only (${#INSTALL_LIST[@]} skills)"
+  echo "  Use --include or --all to add optional skills."
+fi
+echo ""
 
 # --- Copy targets ---
 
@@ -78,29 +159,32 @@ CLAUDE_SKILLS="$PROJECT_ROOT/.claude/skills"
 
 copy_skills() {
   local target_dir="$1"
+  shift
+  local skill_names=("$@")
   local copied=0
   local updated=0
 
   mkdir -p "$target_dir"
 
-  for skill_path in "$SKILLS_SRC"/*/; do
-    [[ -d "$skill_path" ]] || continue
-    skill_name="$(basename "$skill_path")"
-    dest="$target_dir/$skill_name"
+  for skill_name in "${skill_names[@]}"; do
+    local skill_path="$SKILLS_SRC/$skill_name"
+
+    if [[ ! -d "$skill_path" ]]; then
+      echo "  Warning: skill '$skill_name' not found at $skill_path, skipping." >&2
+      continue
+    fi
+
+    local dest="$target_dir/$skill_name"
 
     if [[ -L "$dest" ]]; then
-      # Replace old symlinks from previous install method
       rm "$dest"
     fi
 
     if [[ -d "$dest" ]]; then
-      # Skill dir exists — overwrite orchestrate-defined files, keep user additions.
-      # Exclude hidden dirs (runtime artifacts like .runs/) but include .gitignore.
       rsync -a --exclude='.*/' "$skill_path"/ "$dest"/ 2>/dev/null || \
         cp -r "$skill_path"/* "$dest"/ 2>/dev/null || true
       ((updated++)) || true
     else
-      # First install — copy entire skill directory (exclude runtime artifact dirs).
       rsync -a --exclude='.*/' "$skill_path"/ "$dest" 2>/dev/null || \
         cp -r "$skill_path" "$dest"
       ((copied++)) || true
@@ -111,13 +195,19 @@ copy_skills() {
 }
 
 echo "Installing skills..."
-copy_skills "$AGENTS_SKILLS"
-copy_skills "$CLAUDE_SKILLS"
+copy_skills "$AGENTS_SKILLS" "${INSTALL_LIST[@]}"
+copy_skills "$CLAUDE_SKILLS" "${INSTALL_LIST[@]}"
+
+# --- Runtime directory setup ---
+
+ORCHESTRATE_RT="$PROJECT_ROOT/.orchestrate"
+mkdir -p "$ORCHESTRATE_RT/runs/agent-runs"
+mkdir -p "$ORCHESTRATE_RT/index"
 
 # --- Summary ---
 
 echo ""
-echo "Done! Orchestrate is ready."
+echo "Done! Installed ${#INSTALL_LIST[@]} skills: ${INSTALL_LIST[*]}"
 echo ""
 echo "Verify:"
 echo "  ls -la $AGENTS_SKILLS/"

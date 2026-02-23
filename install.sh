@@ -120,13 +120,18 @@ echo "Installing skills..."
 copy_skills "$AGENTS_SKILLS"
 copy_skills "$CLAUDE_SKILLS"
 
-# --- Rewrite runner paths to match install location ---
+# --- Rewrite source paths to match install location ---
+# Skill files use "orchestrate/" as the default source path prefix.
+# If installed elsewhere, rewrite all "orchestrate/" references to the actual path.
+# Only rewrites the source path prefix — ".orchestrate/" (runtime) is left untouched.
 
 if [[ "$ORCH_REL" != "orchestrate" ]]; then
-  echo "Rewriting runner paths: orchestrate/ -> $ORCH_REL/"
+  echo "Rewriting source paths: orchestrate/ -> $ORCH_REL/"
   for dir in "$AGENTS_SKILLS" "$CLAUDE_SKILLS"; do
     while IFS= read -r -d '' file; do
-      sed -i "s|orchestrate/skills/run-agent/scripts|${ORCH_REL}/skills/run-agent/scripts|g" "$file"
+      # Replace "orchestrate/" but not ".orchestrate/"
+      # Strategy: replace all, then restore any ".orchestrate/" that got mangled
+      sed -i "s|orchestrate/|${ORCH_REL}/|g; s|\\.${ORCH_REL}/|.orchestrate/|g" "$file"
     done < <(find "$dir" -name '*.md' -print0 -o -name '*.sh' -print0)
   done
 fi

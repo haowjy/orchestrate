@@ -2,7 +2,6 @@
 # install.sh — post-clone/submodule setup for orchestrate
 #
 # Copies skills into .agents/skills/ and .claude/skills/ under the workspace root.
-# Rewrites runner paths in copied skills to match where orchestrate is installed.
 #
 # On first run: copies all skill directories.
 # On re-run: overwrites orchestrate-defined files, preserves user additions.
@@ -66,14 +65,9 @@ else
   }
 fi
 
-ORCHESTRATE_DIR="$SCRIPT_DIR"
-SKILLS_SRC="$ORCHESTRATE_DIR/skills"
-
-# Relative path from workspace to orchestrate (e.g. "orchestrate", "tools/orchestrate")
-ORCH_REL="${ORCHESTRATE_DIR#$PROJECT_ROOT/}"
+SKILLS_SRC="$SCRIPT_DIR/skills"
 
 echo "Workspace: $PROJECT_ROOT"
-echo "Orchestrate: $ORCH_REL/"
 
 # --- Copy targets ---
 
@@ -119,22 +113,6 @@ copy_skills() {
 echo "Installing skills..."
 copy_skills "$AGENTS_SKILLS"
 copy_skills "$CLAUDE_SKILLS"
-
-# --- Rewrite source paths to match install location ---
-# Skill files use "orchestrate/" as the default source path prefix.
-# If installed elsewhere, rewrite all "orchestrate/" references to the actual path.
-# Only rewrites the source path prefix — ".orchestrate/" (runtime) is left untouched.
-
-if [[ "$ORCH_REL" != "orchestrate" ]]; then
-  echo "Rewriting source paths: orchestrate/ -> $ORCH_REL/"
-  for dir in "$AGENTS_SKILLS" "$CLAUDE_SKILLS"; do
-    while IFS= read -r -d '' file; do
-      # Replace "orchestrate/" but not ".orchestrate/"
-      # Strategy: replace all, then restore any ".orchestrate/" that got mangled
-      sed -i "s|orchestrate/|${ORCH_REL}/|g; s|\\.${ORCH_REL}/|.orchestrate/|g" "$file"
-    done < <(find "$dir" -name '*.md' -print0 -o -name '*.sh' -print0)
-  done
-fi
 
 # --- Summary ---
 

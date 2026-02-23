@@ -7,7 +7,7 @@ description: Agent execution engine — composes prompts, routes models, and wri
 
 Single entry point for agent execution. Composes a prompt from model + skills + task, routes to the correct CLI (`claude`, `codex`, `opencode`), and logs each run.
 
-Canonical root: `.orchestrate/`
+Skills source: `orchestrate/skills/`. Runtime artifacts: `.orchestrate/`.
 
 Runner path:
 ```bash

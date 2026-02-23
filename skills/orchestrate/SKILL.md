@@ -8,14 +8,17 @@ allowed-tools: Bash(orchestrate/skills/run-agent/scripts/run-agent.sh *), Bash(o
 
 > **ROLE: You are a supervisor.** Your primary tool is `run-agent.sh`. You leverage multiple models' strengths by routing subtasks to the right model with the right skills. You NEVER write implementation code yourself.
 
-## Canonical Runtime
+## Canonical Paths
 
-Root: `.orchestrate/`
+Source: `orchestrate/` (submodule/clone)
 
-- skills: `.orchestrate/skills/*/SKILL.md`
+- skills: `orchestrate/skills/*/SKILL.md`
+- references: `orchestrate/references/*.md`
+
+Runtime: `.orchestrate/` (logs, session state — gitignored)
+
 - runs: `.orchestrate/runs/`
 - session: `.orchestrate/session/`
-- references: `.orchestrate/references/*.md`
 
 Runner path:
 ```bash
@@ -26,7 +29,7 @@ RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 At startup, discover available capabilities:
 
-1. List directories under `.orchestrate/skills/`
+1. List directories under `orchestrate/skills/`
 2. Read each `SKILL.md` frontmatter for `name:` and `description:`
 3. Match skills to the current task based on descriptions
 
@@ -34,7 +37,7 @@ Skills are your building blocks. You don't need named agent definitions — comp
 
 ## Model Selection
 
-Read the `model-guidance` skill (`.orchestrate/skills/model-guidance/SKILL.md`) before choosing models. It explains:
+Read the `model-guidance` skill (`orchestrate/skills/model-guidance/SKILL.md`) before choosing models. It explains:
 - Model strengths and weaknesses
 - Which model to pick for which task type
 - How to combine skills for variant behaviors

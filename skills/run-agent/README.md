@@ -2,7 +2,7 @@
 
 Single entry point for agent execution. Composes prompts from model + skills + task, routes to the correct CLI tool, and logs each run.
 
-Canonical runtime root: `.orchestrate/`
+Skills source: `orchestrate/skills/`. Runtime artifacts: `.orchestrate/`.
 
 ## Runner
 
@@ -31,7 +31,7 @@ RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 1. Parse model, skills, prompt, and context flags
 2. Route model to the correct CLI (`claude`, `codex`, `opencode`)
-3. Load skill bodies from `.orchestrate/skills/*/SKILL.md`
+3. Load skill bodies from `orchestrate/skills/*/SKILL.md`
 4. Compose the final prompt (skills + template vars + reference files + task prompt)
 5. Execute the CLI command
 6. Log artifacts to `{scope-root}/logs/agent-runs/{label}-{PID}/`

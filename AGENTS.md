@@ -6,11 +6,15 @@ This file provides guidance when editing the orchestrate toolkit.
 
 Orchestrate is a multi-model supervisor toolkit for Claude Code, Codex, and OpenCode. It discovers available skills at runtime and composes subagent runs dynamically — picking the right model and skills for each subtask.
 
-The runtime is centered on a canonical project root:
-- `.orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
+Two directory trees:
+
+Source (`orchestrate/` — submodule/clone):
+- `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
+- `orchestrate/references/` — stack-specific review rules
+
+Runtime (`.orchestrate/` — gitignored):
 - `.orchestrate/runs/` — per-run artifacts
 - `.orchestrate/session/` — coordination state
-- `.orchestrate/references/` — stack-specific review rules
 
 ## Core Command
 
@@ -30,11 +34,11 @@ RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 
 ## Runtime Rules
 
-1. Skills are discovered from `.orchestrate/skills/` — each `SKILL.md` has `name:` and `description:` frontmatter.
+1. Skills are discovered from `orchestrate/skills/` — each `SKILL.md` has `name:` and `description:` frontmatter.
 2. `run-agent.sh` composes prompts from model + skills + task and routes to the correct CLI.
 3. Runtime artifacts are written to `.orchestrate/runs/` and `.orchestrate/session/`.
 4. The `model-guidance` skill provides model selection heuristics and skill-composition patterns.
-5. Agent definitions (`.orchestrate/agents/*.md`) are an optional legacy mechanism — ad-hoc composition is preferred.
+5. Agent definitions (`orchestrate/agents/*.md`) are an optional legacy mechanism — ad-hoc composition is preferred.
 
 ## Orchestration Model
 

@@ -37,7 +37,9 @@ refresh_orchestrate_paths() {
     ORCHESTRATE_ROOT="$repo_base/.orchestrate"
   fi
   AGENTS_DIR="$ORCHESTRATE_ROOT/agents"
-  SKILLS_DIR="$ORCHESTRATE_ROOT/skills"
+  # Skills live in the submodule/clone source, not the runtime dir.
+  # Derive from SCRIPT_DIR (inside orchestrate/skills/run-agent/scripts/).
+  SKILLS_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd -P)/skills"
   RUNS_DIR="$ORCHESTRATE_ROOT/runs"
   SESSION_DIR="$ORCHESTRATE_ROOT/session"
 }

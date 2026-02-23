@@ -15,12 +15,6 @@ OUTPUT="${2:?}"
 STDERR_LOG="${3:?}"
 EXIT_CODE="${4:?}"
 
-# Require jq
-if ! command -v jq >/dev/null 2>&1; then
-  _emit_diagnostic
-  exit 1
-fi
-
 _emit_diagnostic() {
   # Compact diagnostic when parsing fails — keep under 10 lines.
   echo "# Run Report (auto-generated)"
@@ -41,6 +35,12 @@ _emit_diagnostic() {
     echo '```'
   fi
 }
+
+# Require jq
+if ! command -v jq >/dev/null 2>&1; then
+  _emit_diagnostic
+  exit 1
+fi
 
 if [[ ! -f "$OUTPUT" ]] || [[ ! -s "$OUTPUT" ]]; then
   _emit_diagnostic

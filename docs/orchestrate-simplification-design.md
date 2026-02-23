@@ -682,11 +682,11 @@ Move from separate hard-coupled skill behavior to data-first defaults:
 - Add `orchestrate/skills/run-agent/references/default-model-guidance.md`
 - Add optional user override resources under `orchestrate/skills/run-agent/references/model-guidance/*.md`
 - Resolve active guidance via `orchestrate/skills/run-agent/scripts/load-model-guidance.sh`
-- Resource precedence is script-enforced (**custom concatenates with default**):
-  - if any files exist in `references/model-guidance/`, load `default-model-guidance.md` **plus** all custom files (concatenated in bytewise-lexicographic path order for determinism)
+- Resource precedence is script-enforced (**custom replaces default**):
+  - if any files exist in `references/model-guidance/`, load all custom files (concatenated in bytewise-lexicographic path order for determinism) and ignore `default-model-guidance.md`
   - otherwise use `default-model-guidance.md` alone
   - Loader scripts must enforce stable ordering (e.g., `sort` on filenames) to ensure identical prompt composition across shells and platforms.
-- A `references/model-guidance/README.md` documents how to add custom guidance files and the concatenation behavior.
+- A `references/model-guidance/README.md` documents how to add custom guidance files and override behavior.
 - Keep `model-guidance` skill as a thin compatibility wrapper that points to run-agent resources (not the primary source)
 
 ## Script Surface Reduction
@@ -795,7 +795,7 @@ Acceptance:
 1. Extract skill list from `install.sh` into `orchestrate/MANIFEST`.
 2. Default install is core-only (`orchestrate` + `run-agent`); add `--include` and `--all` flags.
 3. Separate orchestration core from coding-assist skills in docs.
-4. Move model guidance to run-agent resources with explicit override precedence (custom concatenates with default).
+4. Move model guidance to run-agent resources with explicit override precedence (custom replaces default).
 5. Add `references/README.md` files documenting override behavior for skill policy and model guidance.
 6. Move handoff to project-level (not shipped by default).
 

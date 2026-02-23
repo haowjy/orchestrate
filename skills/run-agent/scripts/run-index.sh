@@ -479,8 +479,9 @@ cmd_stats() {
 }
 
 cmd_continue() {
-  local ref="${1:?Usage: run-index.sh continue <run-ref> -p 'follow-up' [--model override]}"; shift
+  local ref="${1:?Usage: run-index.sh continue <run-ref> -p 'follow-up' [--model override] [--fork|--in-place]}"; shift
   local prompt="" model_override="" extra_skills="" extra_labels=()
+  local continuation_mode_arg=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -488,6 +489,8 @@ cmd_continue() {
       --model)     model_override="$2"; shift 2 ;;
       --skills)    extra_skills="$2"; shift 2 ;;
       --label)     extra_labels+=("$2"); shift 2 ;;
+      --fork)      continuation_mode_arg="--fork"; shift ;;
+      --in-place)  continuation_mode_arg="--in-place"; shift ;;
       *) echo "ERROR: Unknown continue option: $1" >&2; exit 1 ;;
     esac
   done
@@ -520,6 +523,7 @@ cmd_continue() {
   # Build run-agent command
   local runner="$(dirname "$0")/run-agent.sh"
   local cmd=("$runner" --model "$target_model" -p "$prompt" --continue-run "$run_id")
+  [[ -n "$continuation_mode_arg" ]] && cmd+=("$continuation_mode_arg")
 
   if [[ -n "$extra_skills" ]]; then
     cmd+=(--skills "$extra_skills")
@@ -676,7 +680,7 @@ cmd_retry() {
 
   # Pass prompt via stdin to avoid arg length limits
   _info "Retrying run $run_id with model $target_model..."
-  echo "$target_prompt" | exec "${cmd[@]}" -p -
+  echo "$target_prompt" | exec "${cmd[@]}"
 }
 
 cmd_maintain() {

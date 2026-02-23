@@ -57,17 +57,229 @@ normalize_tools_for_harness() {
   esac
 }
 
+build_continuation_fallback_prompt() {
+  local original_run_id="$1"
+  local original_model="$2"
+  local original_log_dir="$3"
+  local follow_up_prompt="$4"
+  local original_input_file="$original_log_dir/input.md"
+  local original_report_file="$original_log_dir/report.md"
+
+  if [[ ! -f "$original_input_file" ]]; then
+    echo "ERROR: Cannot build continuation fallback prompt: missing $original_input_file" >&2
+    return 1
+  fi
+  if [[ ! -f "$original_report_file" ]]; then
+    echo "ERROR: Cannot build continuation fallback prompt: missing $original_report_file" >&2
+    return 1
+  fi
+
+  local original_input original_report
+  original_input="$(cat "$original_input_file")"
+  original_report="$(cat "$original_report_file")"
+
+  cat <<EOF
+# Continuation Context
+
+Native harness continuation was unavailable. Continue from this prior run context.
+
+- Original run ID: $original_run_id
+- Original model: $original_model
+
+## Original Prompt
+
+\`\`\`markdown
+$original_input
+\`\`\`
+
+## Original Report
+
+\`\`\`markdown
+$original_report
+\`\`\`
+
+## Follow-Up Request
+
+$follow_up_prompt
+EOF
+}
+
+resolve_continuation_run_ref() {
+  local ref="$1"
+  local derived="$2"
+
+  case "$ref" in
+    @latest)
+      echo "$derived" | jq -r '.[0].run_id // empty'
+      ;;
+    @last-failed)
+      echo "$derived" | jq -r '[.[] | select(.effective_status == "failed")] | .[0].run_id // empty'
+      ;;
+    @last-completed)
+      echo "$derived" | jq -r '[.[] | select(.effective_status == "completed")] | .[0].run_id // empty'
+      ;;
+    *)
+      local exact
+      exact="$(echo "$derived" | jq -r --arg ref "$ref" '[.[] | select(.run_id == $ref)] | .[0].run_id // empty')"
+      if [[ -n "$exact" ]]; then
+        echo "$exact"
+        return 0
+      fi
+
+      if [[ ${#ref} -lt 8 ]]; then
+        echo "ERROR: Continuation run reference prefix must be at least 8 characters (got ${#ref})." >&2
+        return 1
+      fi
+
+      local matches count
+      matches="$(echo "$derived" | jq -r --arg prefix "$ref" '[.[] | select(.run_id | startswith($prefix))] | map(.run_id)')"
+      count="$(echo "$matches" | jq 'length')"
+
+      if [[ "$count" -eq 0 ]]; then
+        echo "ERROR: No run matching continuation ref '$ref'." >&2
+        return 1
+      fi
+      if [[ "$count" -gt 1 ]]; then
+        echo "ERROR: Ambiguous continuation ref '$ref'. Use a longer prefix." >&2
+        return 1
+      fi
+
+      echo "$matches" | jq -r '.[0]'
+      ;;
+  esac
+}
+
+prepare_continuation() {
+  [[ -z "${CONTINUE_RUN_REF:-}" ]] && return 0
+
+  local index_file="$ORCHESTRATE_ROOT/index/runs.jsonl"
+  if [[ ! -f "$index_file" ]]; then
+    echo "ERROR: Cannot continue run '$CONTINUE_RUN_REF': index file not found at $index_file" >&2
+    return 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "ERROR: jq is required for --continue-run." >&2
+    return 2
+  fi
+
+  local derived
+  derived="$(
+    jq -s '
+      group_by(.run_id)
+      | map(
+          . as $rows
+          | ($rows | map(select(.status == "running")) | first) as $start
+          | ($rows | map(select(.status == "completed" or .status == "failed")) | first) as $fin
+          | ($start // $rows[0])
+          + (if $fin then $fin else {} end)
+          + { effective_status: (if $fin then $fin.status else "running" end) }
+        )
+      | sort_by(.created_at_utc // "") | reverse
+    ' "$index_file" 2>/dev/null
+  )"
+
+  local continue_run_id
+  continue_run_id="$(resolve_continuation_run_ref "$CONTINUE_RUN_REF" "$derived")" || return 1
+  if [[ -z "$continue_run_id" ]]; then
+    echo "ERROR: Could not resolve continuation ref '$CONTINUE_RUN_REF'." >&2
+    return 1
+  fi
+
+  local run_row
+  run_row="$(echo "$derived" | jq --arg id "$continue_run_id" '.[] | select(.run_id == $id)')"
+  if [[ -z "$run_row" ]]; then
+    echo "ERROR: Could not find continuation run '$continue_run_id' in index." >&2
+    return 1
+  fi
+
+  local effective_status source_harness source_model harness_session_id source_log_dir
+  effective_status="$(echo "$run_row" | jq -r '.effective_status // "running"')"
+  if [[ "$effective_status" == "running" ]]; then
+    echo "ERROR: Cannot continue run '$continue_run_id': run has no finalize row (crashed or still in progress)." >&2
+    return 1
+  fi
+  source_harness="$(echo "$run_row" | jq -r '.harness // empty')"
+  source_model="$(echo "$run_row" | jq -r '.model // empty')"
+  harness_session_id="$(echo "$run_row" | jq -r '.harness_session_id // empty')"
+  source_log_dir="$(echo "$run_row" | jq -r '.log_dir // empty')"
+
+  if [[ -z "$source_harness" || -z "$source_model" || -z "$source_log_dir" ]]; then
+    echo "ERROR: Cannot continue run '$continue_run_id': missing required run metadata." >&2
+    return 1
+  fi
+
+  # Continuations default to original model unless user explicitly overrides.
+  if [[ "${MODEL_FROM_CLI:-false}" != true ]]; then
+    MODEL="$source_model"
+  fi
+
+  local target_harness
+  target_harness="$(route_model "$MODEL" 2>/dev/null || echo "")"
+  if [[ -z "$target_harness" ]]; then
+    echo "ERROR: Cannot continue run '$continue_run_id': model '$MODEL' does not map to a supported harness." >&2
+    return 1
+  fi
+  if [[ "$target_harness" != "$source_harness" ]]; then
+    echo "ERROR: Cannot continue run '$continue_run_id': model '$MODEL' maps to '$target_harness', expected '$source_harness'." >&2
+    return 1
+  fi
+
+  CONTINUES_RUN_ID="$continue_run_id"
+  CONTINUATION_FALLBACK_REASON=""
+
+  if [[ -z "$harness_session_id" ]]; then
+    CONTINUATION_MODE="fallback-prompt"
+    CONTINUATION_FALLBACK_REASON="missing_session_id"
+    PROMPT="$(build_continuation_fallback_prompt "$continue_run_id" "$source_model" "$source_log_dir" "$PROMPT")" || return 1
+    return 0
+  fi
+
+  CONTINUE_HARNESS_SESSION_ID="$harness_session_id"
+
+  case "$source_harness" in
+    codex)
+      if [[ "${CONTINUATION_FORK_EXPLICIT:-false}" == true && "${CONTINUATION_FORK:-true}" == true ]]; then
+        echo "ERROR: Codex continuation does not support forking. Use --in-place or omit --fork." >&2
+        return 1
+      fi
+      CONTINUATION_MODE="in-place"
+      ;;
+    claude|opencode)
+      if [[ "${CONTINUATION_FORK:-true}" == true ]]; then
+        CONTINUATION_MODE="fork"
+      else
+        CONTINUATION_MODE="in-place"
+      fi
+      ;;
+    *)
+      CONTINUATION_MODE="fallback-prompt"
+      CONTINUATION_FALLBACK_REASON="unsupported_harness"
+      PROMPT="$(build_continuation_fallback_prompt "$continue_run_id" "$source_model" "$source_log_dir" "$PROMPT")" || return 1
+      ;;
+  esac
+}
+
 build_cli_command() {
   local tool
   local normalized_tools
+  local native_continuation=false
+  CLI_PROMPT_MODE="stdin"
 
   tool="$(route_model "$MODEL" 2>/dev/null || echo "")"
 
   if [[ -z "$tool" ]]; then
+    if [[ -n "${CONTINUE_RUN_REF:-}" ]]; then
+      echo "ERROR: Unknown model family '$MODEL' for continuation run." >&2
+      return 2
+    fi
     echo "[run-agent] WARNING: Unknown model family '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
     tool="$FALLBACK_CLI"
     MODEL="$FALLBACK_MODEL"
   elif ! command -v "$tool" >/dev/null 2>&1; then
+    if [[ -n "${CONTINUE_RUN_REF:-}" ]]; then
+      echo "ERROR: '$tool' CLI not found for continuation model '$MODEL'." >&2
+      return 2
+    fi
     echo "[run-agent] WARNING: '$tool' CLI not found for model '$MODEL'; falling back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
     tool="$FALLBACK_CLI"
     MODEL="$FALLBACK_MODEL"
@@ -81,17 +293,40 @@ build_cli_command() {
   CLI_CMD_ARGV=()
   CLI_HARNESS="$tool"
   normalized_tools="$(normalize_tools_for_harness "$tool" "$TOOLS")"
+  if [[ -n "${CONTINUE_RUN_REF:-}" ]] \
+    && [[ -n "${CONTINUE_HARNESS_SESSION_ID:-}" ]] \
+    && [[ "${CONTINUATION_MODE:-}" != "fallback-prompt" ]]; then
+    native_continuation=true
+  fi
+
   case "$tool" in
     claude)
       CLI_CMD_ARGV=(env CLAUDECODE= claude -p - --model "$MODEL" --effort "$EFFORT" --verbose --output-format stream-json --allowedTools "$normalized_tools" --dangerously-skip-permissions)
+      if [[ "$native_continuation" == true ]]; then
+        CLI_CMD_ARGV+=(--resume "$CONTINUE_HARNESS_SESSION_ID")
+        if [[ "${CONTINUATION_MODE:-}" == "fork" ]]; then
+          CLI_CMD_ARGV+=(--fork-session)
+        fi
+      fi
       ;;
     codex)
-      CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      if [[ "$native_continuation" == true ]]; then
+        CLI_CMD_ARGV=(codex exec resume "$CONTINUE_HARNESS_SESSION_ID" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      else
+        CLI_CMD_ARGV=(codex exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" --dangerously-bypass-approvals-and-sandbox --json -)
+      fi
       ;;
     opencode)
       local effective_model
       effective_model="$(strip_model_prefix "$MODEL")"
       CLI_CMD_ARGV=(opencode run --model "$effective_model" --format json --print-logs --variant "$EFFORT")
+      CLI_PROMPT_MODE="arg"
+      if [[ "$native_continuation" == true ]]; then
+        CLI_CMD_ARGV+=(--session "$CONTINUE_HARNESS_SESSION_ID")
+        if [[ "${CONTINUATION_MODE:-}" == "fork" ]]; then
+          CLI_CMD_ARGV+=(--fork)
+        fi
+      fi
       ;;
     *)
       echo "ERROR: Unsupported CLI harness: $tool" >&2
@@ -201,10 +436,10 @@ _handle_signal() {
 do_execute() {
   local cli_display output_log
   cli_display="$(format_cli_cmd)"
-  output_log="$LOG_DIR/output.jsonl"
 
   # Set up logging and write start index row for crash visibility
   setup_logging
+  output_log="$LOG_DIR/output.jsonl"
   write_log_params "$cli_display"
 
   # Capture git HEAD before execution (best-effort)
@@ -235,7 +470,7 @@ do_execute() {
   cd "$WORK_DIR"
   local harness_exit=0
   set +e
-  if [[ "$CLI_HARNESS" == "opencode" ]]; then
+  if [[ "${CLI_PROMPT_MODE:-stdin}" == "arg" ]]; then
     "${CLI_CMD_ARGV[@]}" "$COMPOSED_PROMPT" \
       > "$output_log" \
       2> >(tee "$LOG_DIR/stderr.log" >&2)

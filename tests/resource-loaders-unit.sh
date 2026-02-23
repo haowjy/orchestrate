@@ -88,6 +88,13 @@ review
 review  # duplicate
 - smoke-test
 EOF
+
+  # skills mode filters to installed sibling skills (../<name>/SKILL.md)
+  mkdir -p "$tmp/review" "$tmp/research" "$tmp/smoke-test"
+  : > "$tmp/review/SKILL.md"
+  : > "$tmp/research/SKILL.md"
+  : > "$tmp/smoke-test/SKILL.md"
+
   out="$("$root/scripts/load-skill-policy.sh" --mode skills)"
   assert_contains "$out" "review" "skills mode should include normalized skill names"
   assert_contains "$out" "research" "skills mode should include plain-line skills"
@@ -106,4 +113,3 @@ main() {
 }
 
 main "$@"
-

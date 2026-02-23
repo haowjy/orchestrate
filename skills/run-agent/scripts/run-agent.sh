@@ -57,6 +57,7 @@ WORK_DIR="$REPO_ROOT"
 SESSION_ID=""               # explicit session grouping (--session)
 CONTINUE_RUN_REF=""         # continuation target (--continue-run)
 CONTINUATION_FORK=true      # fork by default where supported
+CONTINUATION_FORK_EXPLICIT=false
 declare -A VARS=()
 declare -A LABELS=()
 REF_FILES=()
@@ -78,7 +79,7 @@ HEAD_BEFORE=""
 CONTINUES_RUN_ID=""
 CONTINUATION_MODE=""
 CONTINUATION_FALLBACK_REASON=""
-RETRIES_RUN_ID=""
+RETRIES_RUN_ID="${RETRIES_RUN_ID:-}"
 
 refresh_orchestrate_paths "$REPO_ROOT"
 
@@ -112,6 +113,7 @@ init_dirs() {
 parse_args "$@"
 init_work_dir
 validate_args
+prepare_continuation
 init_dirs
 
 COMPOSED_PROMPT="$(compose_prompt)"

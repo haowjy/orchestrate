@@ -120,7 +120,11 @@ parse_args() {
         ;;
       -p|--prompt)
         require_option_value "$1" "$#"
-        CLI_PROMPT="$2"
+        if [[ "$2" == "-" ]]; then
+          CLI_PROMPT=""
+        else
+          CLI_PROMPT="$2"
+        fi
         shift 2
         ;;
       --session)
@@ -167,10 +171,12 @@ parse_args() {
         ;;
       --fork)
         CONTINUATION_FORK=true
+        CONTINUATION_FORK_EXPLICIT=true
         shift
         ;;
       --in-place)
         CONTINUATION_FORK=false
+        CONTINUATION_FORK_EXPLICIT=true
         shift
         ;;
       --dry-run) DRY_RUN=true; shift ;;

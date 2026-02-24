@@ -493,6 +493,7 @@ do_execute() {
 
   # Set up logging and write start index row for crash visibility
   setup_logging
+  export ORCHESTRATE_RUN_ID="$RUN_ID"
   output_log="$LOG_DIR/output.jsonl"
   write_log_params "$cli_display"
 
@@ -512,7 +513,8 @@ do_execute() {
   # Record start time for duration tracking
   _run_start_epoch="$(date +%s)"
 
-  # Append report instruction now that LOG_DIR is known
+  # Append output directory and report instruction now that LOG_DIR is known
+  COMPOSED_PROMPT+="$(build_output_dir_instruction "$LOG_DIR")"
   COMPOSED_PROMPT+="$(build_report_instruction "$LOG_DIR/report.md" "$DETAIL")"
 
   # Save composed prompt

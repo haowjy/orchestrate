@@ -296,6 +296,16 @@ compose_prompt() {
 # ─── Report Instruction ─────────────────────────────────────────────────────
 # Appended to prompt so the subagent writes a report file the orchestrator can read.
 
+build_output_dir_instruction() {
+  local log_dir="$1"
+  cat <<EOF
+
+# Output Directory
+
+Write any output files to: \`$log_dir/\`
+EOF
+}
+
 build_report_instruction() {
   local report_path="$1"
   local level="$2"

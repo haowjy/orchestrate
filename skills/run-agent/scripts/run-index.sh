@@ -16,6 +16,7 @@
 #   stats                    Aggregate statistics
 #   continue <run-ref>       Continue a previous run's session
 #   retry <run-ref>          Re-run with same or overridden params
+#   scratch <run-ref>        List scratch files for a run
 #   maintain                 Archive/compact old index entries
 #
 # Global flags:
@@ -799,6 +800,60 @@ cmd_maintain() {
   fi
 }
 
+cmd_scratch() {
+  local ref="${1:?Usage: run-index.sh scratch <run-ref>}"
+
+  local derived run_id
+  derived="$(_build_derived_view)"
+  run_id="$(_resolve_run_ref "$ref" "$derived")" || exit 1
+
+  if [[ -z "$run_id" ]]; then
+    _error "not_found" "No run matching '$ref'"
+    exit 1
+  fi
+
+  _resolve_repo
+  local scratch_dir="$REPO_ROOT/.scratch/$run_id"
+
+  if [[ ! -d "$scratch_dir" ]]; then
+    if [[ "$JSON_MODE" == true ]]; then
+      _json_ok "scratch" "{\"run_id\":\"$run_id\",\"files\":[]}"
+    else
+      echo "No scratch files for run $run_id"
+    fi
+    return 0
+  fi
+
+  # List files (exclude latest symlink and dotfiles)
+  local -a files=()
+  while IFS= read -r -d '' f; do
+    local base
+    base="$(basename "$f")"
+    [[ "$base" == "latest" || "$base" == .* ]] && continue
+    files+=("$base")
+  done < <(find "$scratch_dir" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+
+  if [[ "$JSON_MODE" == true ]]; then
+    local files_json="["
+    local first=true
+    for f in "${files[@]}"; do
+      [[ "$first" == true ]] && first=false || files_json+=","
+      files_json+="\"$f\""
+    done
+    files_json+="]"
+    _json_ok "scratch" "{\"run_id\":\"$run_id\",\"files\":$files_json}"
+  else
+    if [[ ${#files[@]} -eq 0 ]]; then
+      echo "No scratch files for run $run_id"
+    else
+      echo "Scratch files for run $run_id (${#files[@]} files):"
+      for f in "${files[@]}"; do
+        echo "  $f"
+      done
+    fi
+  fi
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 # Parse global flags first
@@ -830,6 +885,7 @@ case "$COMMAND" in
   continue) _require_index; cmd_continue "$@" ;;
   retry)    _require_index; cmd_retry "$@" ;;
   maintain) _require_index; cmd_maintain "$@" ;;
+  scratch)  _require_index; cmd_scratch "$@" ;;
   help)
     cat <<'EOF'
 Usage: run-index.sh <command> [options]
@@ -840,6 +896,7 @@ Commands:
   report <run-ref>         Print report content
   logs <run-ref>           Paginated log browsing
   files <run-ref>          Print touched files
+  scratch <run-ref>        List scratch files for a run
   stats                    Aggregate statistics
   continue <run-ref>       Continue a previous run's session
   retry <run-ref>          Re-run with same or overridden params

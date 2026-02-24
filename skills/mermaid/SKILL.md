@@ -1,12 +1,12 @@
 ---
 name: mermaid
-description: Rules and validation for writing Mermaid diagrams. Load this skill when creating or editing Mermaid diagrams in documentation.
+description: Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation.
 user-invocable: false
 ---
 
 # Mermaid Diagram Rules
 
-**Always follow these rules when writing Mermaid diagrams.** After writing or editing any Mermaid block, validate with the co-located script: `scripts/check-mermaid.sh <file>` (or `./scripts/check-mermaid.sh` if the project has a wrapper). If invoking from repo root, use `.agents/skills/mermaid/scripts/check-mermaid.sh` (Codex) or `.claude/skills/mermaid/scripts/check-mermaid.sh` (Claude).
+**Always follow these rules when writing Mermaid diagrams.** After writing or editing any Mermaid block, validate with the co-located script: `scripts/check-mermaid.sh <file>`.
 
 ## Syntax Rules (Critical)
 

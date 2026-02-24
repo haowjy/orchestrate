@@ -4,12 +4,113 @@ Intent-first multi-model supervisor toolkit for Claude Code, Codex, and OpenCode
 
 A run is `model + skills + prompt`. Skills are discovered at runtime from `orchestrate/skills/*/SKILL.md` frontmatter — no static agent definitions.
 
+## What's Inside
+
+### Core skills (always installed)
+
+| Skill | Description |
+|---|---|
+| `orchestrate` | Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh |
+| `run-agent` | Agent execution engine — composes prompts, routes models, and writes run artifacts |
+
+### Optional skills
+
+| Skill | Description |
+|---|---|
+| `review` | Review code against project rules. Loads stack-specific rule files based on files in scope |
+| `research` | Research methodology for exploring codebases and evaluating approaches before planning |
+| `smoke-test` | Conventions for ad-hoc smoke tests and verification code |
+| `scratchpad` | Conventions for scratch notes and scope-based file organization |
+| `plan-slice` | Break the next slice from a plan into an implementable slice file |
+| `mermaid` | Rules and validation for writing Mermaid diagrams |
+| `model-guidance` | Model tendencies and selection guidance for orchestration decisions |
+
+### Agent profiles
+
+| Agent | Description |
+|---|---|
+| `coder` | Implementation agent with full tool access |
+| `researcher` | Research and investigation with read-only access and web lookup |
+| `reviewer` | Code review with read-only access and web lookup |
+
+## Installation
+
+Tell your LLM agent:
+
+> Fetch and follow instructions from `https://raw.githubusercontent.com/haowjy/orchestrate/refs/heads/main/INSTALL.md`
+
+This works with any agent that can fetch URLs — Claude Code, Codex, OpenCode, Cursor, etc. The install guide walks the agent through setup interactively (submodule vs clone, location, skill/agent selection).
+
+### Alternative: plugin install
+
+Plugin install discovers skills and agents but skips runtime directory setup and MANIFEST-based filtering.
+
+**Claude Code:**
+```bash
+/plugin marketplace add haowjy/orchestrate
+/plugin install orchestrate@orchestrate-marketplace
+```
+
+**Cursor:**
+```text
+/plugin-add orchestrate
+```
+
+### Manual install
+
+1. Add orchestrate as a submodule (recommended) or clone:
+
+```bash
+# Submodule (tracked by parent repo, collaborators get it automatically)
+git submodule add https://github.com/haowjy/orchestrate orchestrate
+
+# Or clone (simpler, but untracked)
+git clone https://github.com/haowjy/orchestrate orchestrate
+echo 'orchestrate/' >> .gitignore
+```
+
+2. Sync skills and agents:
+
+```bash
+bash orchestrate/sync.sh pull              # all skills + agents (default)
+bash orchestrate/sync.sh pull --skills review,mermaid   # selective
+bash orchestrate/sync.sh pull --agents reviewer         # selective
+bash orchestrate/sync.sh --help            # see all options
+```
+
+If orchestrate lives outside the repo: `bash /path/to/orchestrate/sync.sh pull --workspace /path/to/project`
+
+3. Update:
+
+```bash
+# Submodule
+git submodule update --remote orchestrate && bash orchestrate/sync.sh pull
+
+# Clone
+cd orchestrate && git pull && cd - && bash orchestrate/sync.sh pull
+```
+
+### Uninstall
+
+```bash
+# If submodule:
+git submodule deinit -f orchestrate
+git rm -f orchestrate
+rm -rf .git/modules/orchestrate
+
+# If clone:
+rm -rf orchestrate
+
+# Remove synced files:
+rm -rf .agents/skills/ .claude/skills/ .agents/agents/ .claude/agents/ .orchestrate/
+```
+
 ## Directory Layout
 
 Source (`orchestrate/` — submodule/clone):
 - `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
 - `orchestrate/agents/*.md` — agent profiles (convenience aliases with permission defaults)
-- `orchestrate/MANIFEST` — skill registry for install.sh
+- `orchestrate/MANIFEST` — skill & agent registry for sync.sh
 - `orchestrate/docs/` — design documents
 
 Runtime (`.orchestrate/` — gitignored):
@@ -218,21 +319,6 @@ Each run produces a flat directory at `.orchestrate/runs/agent-runs/<run-id>/`:
 - `stderr.log` — harness stderr
 - `report.md` — extracted report
 - `files-touched.txt` — files modified
-
-## Install
-
-```bash
-# Core only (orchestrate + run-agent)
-bash orchestrate/install.sh
-
-# With optional skills
-bash orchestrate/install.sh --include review,mermaid
-
-# Everything
-bash orchestrate/install.sh --all
-```
-
-This syncs skills to `.agents/skills/` and `.claude/skills/`, and agent profiles to `.agents/agents/` and `.claude/agents/`.
 
 ## Testing
 

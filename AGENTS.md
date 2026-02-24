@@ -13,7 +13,7 @@ Two directory trees:
 Source (`orchestrate/` — submodule/clone):
 - `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
 - `orchestrate/agents/*.md` — agent profiles (convenience aliases with permission defaults)
-- `orchestrate/MANIFEST` — skill registry for install.sh
+- `orchestrate/MANIFEST` — skill & agent registry for sync.sh
 - `orchestrate/docs/` — design documents
 
 Runtime (`.orchestrate/` — gitignored):
@@ -61,14 +61,17 @@ INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
 ## Install
 
 ```bash
-# Core only (orchestrate + run-agent)
-bash orchestrate/install.sh
+# Sync all skills + agents (default)
+bash orchestrate/sync.sh pull
 
-# With optional skills
-bash orchestrate/install.sh --include review,mermaid
+# Selective: specific skills only
+bash orchestrate/sync.sh pull --skills review,mermaid
 
-# Everything
-bash orchestrate/install.sh --all
+# Selective: specific agents only
+bash orchestrate/sync.sh pull --agents reviewer
+
+# Explicit all
+bash orchestrate/sync.sh pull --all
 ```
 
 ## Orchestration Model
@@ -81,6 +84,10 @@ The orchestrator is a multi-model routing layer:
 5. Launch via `run-agent.sh` with `--label` and `--session` for grouping
 6. Evaluate outputs (via `run-index.sh report @latest`)
 7. Repeat until user objective is satisfied
+
+## Before Reading Script Source
+
+All scripts support `--help`. Run that first before reading source code to understand usage, flags, and behavior.
 
 ## Conventions
 

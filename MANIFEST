@@ -1,17 +1,21 @@
-# Orchestrate Skill Manifest
-# Skills listed here are available for installation via install.sh.
+# Orchestrate Skill & Agent Manifest
+# Items listed here are available for syncing via sync.sh.
 # Lines starting with # are comments. Empty lines are ignored.
 #
 # Core skills (always installed):
 orchestrate
 run-agent
 
-# Available skills (install via --include <name> or --all):
+# Optional skills (sync via --skills <name> or --all):
 review
 research
 smoke-test
 scratchpad
 plan-slice
 mermaid
-backlog
 model-guidance
+
+# Optional agents (sync via --agents <name> or --all):
+coder
+researcher
+reviewer

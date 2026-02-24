@@ -1,94 +1,58 @@
-# Install Orchestrate — LLM Guide
+# Install Orchestrate
 
-This file is for LLMs helping users install orchestrate. Follow these instructions to drive `install.sh` based on user preference.
+You are an LLM agent helping a user install orchestrate into their project. Follow these instructions exactly.
 
-## Before you start
+## Step 1: Gather information
 
-Ask the user one question:
+Ask the user the following. Present all questions at once, with your recommendations:
 
-1. **Submodule or clone?**
-   - **Submodule** (recommended) — version is pinned and tracked by the parent repo; collaborators get it automatically with `git clone --recurse-submodules`; update with `git submodule update --remote`
-   - **Clone** — simpler; just a nested git repo; update with `git pull`; not tracked by the parent repo so each developer manages their own version
+1. **Where is the target project?** — The project root where orchestrate will be installed. Default to the current working directory.
+2. **Submodule or clone?** — Recommend submodule (version-pinned, tracked by parent repo, collaborators get it automatically). Clone is simpler but untracked.
+3. **Where should orchestrate live?** — Default is `<project-root>/orchestrate/`. If the user wants it outside the repo (e.g. a shared install), they can specify a different path — `sync.sh pull --workspace <project-root>` handles this.
+4. **All skills/agents or selective?** — After cloning, read `orchestrate/MANIFEST` to see what's available. Check what already exists in `.agents/skills/` and `.claude/skills/` in the target project. Note any overlaps. Recommend `--all` for coding projects. For non-coding use cases (e.g. just building custom agents/skills), suggest selective install with `--skills` and/or `--agents`.
 
-## Step 1: Add orchestrate
+Wait for the user to confirm before proceeding.
 
-### If submodule:
+## Step 2: Clone
 
+Submodule:
 ```bash
-git submodule add https://github.com/haowjy/orchestrate orchestrate
+git submodule add https://github.com/haowjy/orchestrate <orchestrate-path>
 ```
 
-### If clone:
-
+Clone:
 ```bash
-git clone https://github.com/haowjy/orchestrate orchestrate
-echo 'orchestrate/' >> .gitignore
+git clone https://github.com/haowjy/orchestrate <orchestrate-path>
+echo '<orchestrate-path>/' >> .gitignore
 ```
 
-## Step 2: Run setup
+## Step 3: Sync
+
+Run `bash <orchestrate-path>/sync.sh --help` to confirm available options, then run the sync command matching the user's choices:
 
 ```bash
-bash orchestrate/install.sh
+bash <orchestrate-path>/sync.sh pull                              # all (default)
+bash <orchestrate-path>/sync.sh pull --all                        # explicit all
+bash <orchestrate-path>/sync.sh pull --skills review,mermaid      # selective skills
+bash <orchestrate-path>/sync.sh pull --agents reviewer            # selective agents
 ```
 
-If orchestrate was cloned outside the repo, specify the workspace:
+If orchestrate lives outside the project repo, add `--workspace <project-root>`.
 
+## Step 4: Verify
+
+Confirm skills and agents were copied:
 ```bash
-bash /path/to/orchestrate/install.sh --workspace /path/to/project
+ls .agents/skills/ .claude/skills/ .agents/agents/ .claude/agents/
 ```
 
-## Step 3: Verify
+## Step 5: Output maintenance instructions
 
-```bash
-ls -la .agents/skills/
-ls -la .claude/skills/
-```
+After a successful install, output instructions **directly to the user** (do NOT write them to a file). The instructions should cover:
 
-Both directories should contain skill directories (orchestrate, run-agent, review, etc.).
+- **How to update**: pull latest from submodule/clone, then re-run `sync.sh pull`
+- **How to sync after editing skills locally**: `sync.sh push` to push changes back to the submodule
+- **How to check sync status**: `sync.sh status`
+- **How to uninstall**: remove the submodule/clone, then `rm -rf .agents/skills/ .claude/skills/ .agents/agents/ .claude/agents/ .orchestrate/`
 
-## Updating
-
-### If submodule:
-
-```bash
-git submodule update --remote orchestrate
-```
-
-### If clone:
-
-```bash
-cd orchestrate && git pull && cd -
-```
-
-Then re-run install to update skill copies:
-
-```bash
-bash orchestrate/install.sh
-```
-
-Re-running install overwrites shipped files but preserves any custom files you added.
-
-## Uninstalling
-
-### If submodule:
-
-```bash
-git submodule deinit -f orchestrate
-git rm -f orchestrate
-rm -rf .git/modules/orchestrate
-```
-
-### If clone:
-
-```bash
-rm -rf orchestrate
-```
-
-Then remove copied skill directories:
-
-```bash
-for skill in orchestrate/skills/*/; do
-  name="$(basename "$skill")"
-  rm -rf ".agents/skills/$name" ".claude/skills/$name"
-done
-```
+Tailor the instructions to the choices the user made (submodule vs clone, orchestrate path, workspace path). The user can then paste these wherever they keep project notes.

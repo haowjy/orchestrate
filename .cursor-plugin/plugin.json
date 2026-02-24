@@ -1,0 +1,13 @@
+{
+  "name": "orchestrate",
+  "displayName": "Orchestrate",
+  "description": "Multi-agent orchestrator — supervisor loop that launches agents to implement plans",
+  "version": "1.0.0",
+  "author": { "name": "Jimmy Yao" },
+  "homepage": "https://github.com/haowjy/orchestrate",
+  "repository": "https://github.com/haowjy/orchestrate",
+  "license": "MIT",
+  "keywords": ["orchestrator", "agents", "multi-agent", "automation"],
+  "skills": "./skills/",
+  "agents": "./agents/"
+}

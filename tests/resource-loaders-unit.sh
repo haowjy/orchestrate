@@ -43,42 +43,42 @@ test_skill_policy_loader_precedence_and_parse() {
   cat > "$root/references/default.md" <<'EOF'
 # defaults
 run-agent
-- model-guidance
+- plan-slicing
 EOF
 
   # Default only.
   local out
   out="$("$root/scripts/load-skill-policy.sh")"
   assert_contains "$out" "run-agent" "default policy should be loaded when no custom files exist"
-  assert_contains "$out" "model-guidance" "default policy should include model-guidance"
+  assert_contains "$out" "plan-slicing" "default policy should include plan-slicing"
 
   # Add custom policy -> default ignored.
   cat > "$root/references/custom.md" <<'EOF'
 # custom policy
-- review
-research
+- reviewing
+researching
 EOF
   out="$("$root/scripts/load-skill-policy.sh")"
-  assert_contains "$out" "review" "custom policy should be loaded when present"
+  assert_contains "$out" "reviewing" "custom policy should be loaded when present"
   assert_not_contains "$out" "run-agent" "default policy should be ignored when custom exists"
 
   # Parsed skills should normalize comments and bullets and dedupe.
   cat > "$root/references/custom-2.md" <<'EOF'
-review
-review  # duplicate
-- smoke-test
+reviewing
+reviewing  # duplicate
+- scratchpad
 EOF
 
   # skills mode filters to installed sibling skills (../<name>/SKILL.md)
-  mkdir -p "$tmp/review" "$tmp/research" "$tmp/smoke-test"
-  : > "$tmp/review/SKILL.md"
-  : > "$tmp/research/SKILL.md"
-  : > "$tmp/smoke-test/SKILL.md"
+  mkdir -p "$tmp/reviewing" "$tmp/researching" "$tmp/scratchpad"
+  : > "$tmp/reviewing/SKILL.md"
+  : > "$tmp/researching/SKILL.md"
+  : > "$tmp/scratchpad/SKILL.md"
 
   out="$("$root/scripts/load-skill-policy.sh" --mode skills)"
-  assert_contains "$out" "review" "skills mode should include normalized skill names"
-  assert_contains "$out" "research" "skills mode should include plain-line skills"
-  assert_contains "$out" "smoke-test" "skills mode should include bullet-line skills"
+  assert_contains "$out" "reviewing" "skills mode should include normalized skill names"
+  assert_contains "$out" "researching" "skills mode should include plain-line skills"
+  assert_contains "$out" "scratchpad" "skills mode should include bullet-line skills"
 }
 
 main() {

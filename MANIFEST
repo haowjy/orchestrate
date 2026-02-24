@@ -7,13 +7,11 @@ orchestrate
 run-agent
 
 # Optional skills (sync via --skills <name> or --all):
-review
-research
-smoke-test
+reviewing
+researching
 scratchpad
-plan-slice
+plan-slicing
 mermaid
-model-guidance
 
 # Optional agents (sync via --agents <name> or --all):
 coder

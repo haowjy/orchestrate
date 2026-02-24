@@ -23,30 +23,23 @@ Runtime (`.orchestrate/` — gitignored):
 ## Core Commands
 
 ```bash
-RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
-INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
-
 # Run: model + skills + prompt
-"$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth changes"
+skills/run-agent/scripts/run-agent.sh --model MODEL --skills SKILL1,SKILL2 -p "PROMPT"
 
-# Run with an agent profile (loads defaults from orchestrate/agents/reviewer.md)
-"$RUNNER" --agent reviewer -p "Review auth changes"
+# Run with an agent profile
+skills/run-agent/scripts/run-agent.sh --agent AGENT -p "PROMPT"
 
-# Agent with CLI overrides
-"$RUNNER" --agent reviewer --model claude-opus-4-6 -p "Deep review"
-
-# Run with labels and session grouping
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test \
-    --session my-session --label ticket=PAY-123 \
-    -p "Implement feature"
+# With labels and session grouping
+skills/run-agent/scripts/run-agent.sh --model MODEL --skills SKILLS \
+    --session SESSION_ID --label KEY=VALUE -p "PROMPT"
 
 # Dry run
-"$RUNNER" --model gpt-5.3-codex --skills review --dry-run -p "Review changes"
+skills/run-agent/scripts/run-agent.sh --model MODEL --skills SKILLS --dry-run -p "PROMPT"
 
 # Inspect runs
-"$INDEX" list
-"$INDEX" show @latest
-"$INDEX" stats
+skills/run-agent/scripts/run-index.sh list
+skills/run-agent/scripts/run-index.sh show @latest
+skills/run-agent/scripts/run-index.sh stats
 ```
 
 ## Runtime Rules

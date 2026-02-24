@@ -45,6 +45,7 @@ Filtering (pull/push):
   --skills skill1,skill2   Only sync specific skills (validated against MANIFEST)
   --agents agent1,agent2   Only sync specific agent profiles (validated against MANIFEST)
   --all                    Sync all skills + all agents (default behavior)
+  --include-hooks          Also sync platform hooks (.cursor, .opencode) [pull only]
 
 Default mode (pull/push):
 - apply automatically when no conflicts are detected
@@ -65,6 +66,7 @@ USAGE
 COMMAND=""
 OVERWRITE=false
 SHOW_DIFF=false
+INCLUDE_HOOKS=false
 EXTRA_EXCLUDES=()
 FILTER_SKILLS=""
 FILTER_AGENTS=""
@@ -105,6 +107,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --all) FILTER_ALL=true; shift ;;
+    --include-hooks) INCLUDE_HOOKS=true; shift ;;
     --include-agents)
       echo "[sync] NOTE: --include-agents is deprecated; agents are always included." >&2
       shift
@@ -259,6 +262,90 @@ else
   build_skill_list
   build_agent_list
 fi
+
+# --- Platform hooks sync ---
+
+# Merge orchestrate hooks into Cursor's .cursor/hooks.json using jq.
+# If the file doesn't exist, copy ours directly. If it does, merge our
+# hook entries into each event array (deduplicated by command path).
+merge_cursor_hooks() {
+  local src="$ORCHESTRATE_DIR/hooks/.cursor/hooks.json"
+  local dest="$PROJECT_ROOT/.cursor/hooks.json"
+
+  [[ -f "$src" ]] || return 0
+  mkdir -p "$PROJECT_ROOT/.cursor"
+
+  if [[ ! -f "$dest" ]]; then
+    cp "$src" "$dest"
+    echo "  Created .cursor/hooks.json"
+    return 0
+  fi
+
+  # Merge: deep-merge our hooks into the existing file.
+  # For each event key, concatenate arrays and deduplicate by .command+matcher
+  # (our entries win on conflict). User hooks for other events are preserved.
+  if command -v jq >/dev/null 2>&1; then
+    local merged
+    merged="$(jq -s '
+      (.[0].hooks // {}) as $ours |
+      (.[1] // {}) |
+      .version //= 1 |
+      .hooks = (
+        (.hooks // {}) as $theirs |
+        ($ours | keys) as $our_keys |
+        ($theirs | keys) as $their_keys |
+        ($our_keys + $their_keys | unique) |
+        map({
+          key: .,
+          value: (
+            (($ours[.] // []) + ($theirs[.] // [])) | unique_by({command, matcher})
+          )
+        }) | from_entries
+      )
+    ' "$src" "$dest" 2>/dev/null)" || {
+      echo "  Warning: failed to merge .cursor/hooks.json — skipping (existing file preserved)" >&2
+      return 0
+    }
+    echo "$merged" > "$dest"
+    echo "  Merged orchestrate hooks into .cursor/hooks.json"
+  else
+    echo "  Warning: jq not found — cannot merge .cursor/hooks.json. Install jq or merge manually." >&2
+  fi
+}
+
+sync_platform_hooks() {
+  local hooks_dir="$ORCHESTRATE_DIR/hooks"
+  local hooks_dest="$PROJECT_ROOT/.orchestrate/hooks/scripts"
+
+  # Copy shared hook scripts to .orchestrate/hooks/scripts/
+  if [[ -d "$hooks_dir/scripts" ]]; then
+    mkdir -p "$hooks_dest"
+    cp "$hooks_dir/scripts/"*.sh "$hooks_dest/"
+    chmod +x "$hooks_dest/"*.sh
+    echo "  Synced hook scripts to .orchestrate/hooks/scripts/"
+  fi
+
+  # OpenCode — copy orchestrate.ts plugin
+  local oc_src="$hooks_dir/.opencode/plugins/orchestrate.ts"
+  local oc_dest="$PROJECT_ROOT/.opencode/plugins/orchestrate.ts"
+  if [[ -f "$oc_src" ]]; then
+    mkdir -p "$PROJECT_ROOT/.opencode/plugins"
+    if [[ ! -f "$oc_dest" ]]; then
+      cp "$oc_src" "$oc_dest"
+      echo "  Created .opencode/plugins/orchestrate.ts"
+    elif diff -q "$oc_src" "$oc_dest" >/dev/null 2>&1; then
+      : # Already in sync
+    elif [[ "$OVERWRITE" == true ]]; then
+      cp "$oc_src" "$oc_dest"
+      echo "  Updated .opencode/plugins/orchestrate.ts"
+    else
+      echo "  Conflict: .opencode/plugins/orchestrate.ts differs. Use --overwrite to replace." >&2
+    fi
+  fi
+
+  # Cursor — merge into existing hooks.json
+  merge_cursor_hooks
+}
 
 # --- Helpers ---
 
@@ -459,11 +546,6 @@ apply_pull() {
 
   echo "  Synced $skills_copied skills, $agents_copied agents"
 
-  # Runtime directory setup (pull-only)
-  local orchestrate_rt="$PROJECT_ROOT/.orchestrate"
-  mkdir -p "$orchestrate_rt/runs/agent-runs"
-  mkdir -p "$orchestrate_rt/index"
-
   echo "Done. Custom file additions are preserved."
 }
 
@@ -553,7 +635,28 @@ do_status() {
   fi
 }
 
+ensure_runtime_dirs() {
+  local orchestrate_rt="$PROJECT_ROOT/.orchestrate"
+  mkdir -p "$orchestrate_rt/runs/agent-runs"
+  mkdir -p "$orchestrate_rt/index"
+  mkdir -p "$orchestrate_rt/session"
+
+  # Create default tracked-skills if it doesn't exist
+  if [[ ! -f "$orchestrate_rt/tracked-skills" ]]; then
+    cat > "$orchestrate_rt/tracked-skills" <<'TRACKED'
+# Skills to auto-reload on session start.
+# One skill name per line. Lines starting with # are comments.
+orchestrate
+run-agent
+TRACKED
+    echo "  Created default .orchestrate/tracked-skills"
+  fi
+}
+
 do_preview_or_apply_pull() {
+  # Always ensure runtime directories exist on pull, even if no files changed
+  ensure_runtime_dirs
+
   preview_pull
 
   if [[ "$SHOW_DIFF" == true ]]; then
@@ -561,16 +664,21 @@ do_preview_or_apply_pull() {
     echo ""
   fi
 
+  # Platform hooks run independently of skill/agent sync — they have their own
+  # conflict handling (merge for Cursor, diff-check for OpenCode).
+  if [[ "$INCLUDE_HOOKS" == true ]]; then
+    sync_platform_hooks
+  fi
+
   if ! has_pending_changes; then
-    echo "No pending sync changes."
-    echo "No action required."
+    echo "No pending skill/agent sync changes."
     return
   fi
 
   if has_conflicts && [[ "$OVERWRITE" == false ]]; then
     print_preview_summary
     echo ""
-    echo "Conflicts detected. No files were changed."
+    echo "Conflicts detected. No skill/agent files were changed."
     echo "Use --overwrite to apply all updates anyway."
     echo "Use --diff for quick content diffs."
     exit 2

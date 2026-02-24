@@ -1,19 +1,17 @@
 ---
 name: run-agent
-description: Agent execution engine — composes prompts, routes models, and writes run artifacts.
+description: Agent execution engine that composes prompts, routes models, and writes run artifacts. Use when launching subagent runs.
 ---
 
 # Run-Agent — Execution Engine
 
-Single entry point for agent execution. A run is `model + skills + prompt`, optionally fronted by an agent profile for convenience defaults and permissions. Routes to the correct CLI (`claude`, `codex`, `opencode`), logs everything, and writes structured index entries.
+Single entry point for agent execution. A run is `model + agent (opt) + skills (opt) + prompt`.xw Routes to the correct CLI (`claude`, `codex`, `opencode`) based on the model, logs everything, and writes structured index entries.
 
 Skills source: sibling skills (`../`). Runtime artifacts: `.orchestrate/`.
 
-Runner path:
-```bash
-RUNNER=scripts/run-agent.sh
-INDEX=scripts/run-index.sh
-```
+Runner scripts (relative to this skill directory):
+- `scripts/run-agent.sh` — launch a subagent run
+- `scripts/run-index.sh` — inspect and manage runs
 
 ## Run Composition
 
@@ -21,24 +19,22 @@ Compose runs dynamically by specifying model, skills, and prompt:
 
 ```bash
 # Model + skills + prompt
-"$RUNNER" --model claude-sonnet-4-6 --skills review,smoke-test \
-    -p "Adversarial review: write tests to break the auth code"
+scripts/run-agent.sh --model MODEL --skills SKILL1,SKILL2 -p "PROMPT"
 
 # Model + prompt (no skills)
-"$RUNNER" --model gpt-5.3-codex -p "Investigate the failing collab tests"
+scripts/run-agent.sh --model MODEL -p "PROMPT"
 
 # With labels and session grouping
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test \
-    --session my-session --label ticket=PAY-123 \
-    -p "Implement the feature"
+scripts/run-agent.sh --model MODEL --skills SKILLS \
+    --session SESSION_ID --label KEY=VALUE -p "PROMPT"
 
-# With template variables for project-specific paths
-"$RUNNER" --model gpt-5.3-codex \
-    -v PLAN_FILE=path/to/plan.md -v SLICE_FILE=path/to/slice.md \
-    -p "Implement {{SLICE_FILE}} from {{PLAN_FILE}}"
+# With template variables
+scripts/run-agent.sh --model MODEL \
+    -v KEY1=path/to/file1 -v KEY2=path/to/file2 \
+    -p "Task using {{KEY1}} and {{KEY2}}"
 
 # Dry run — see composed prompt + CLI command without executing
-"$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth" --dry-run
+scripts/run-agent.sh --model MODEL --skills SKILLS --dry-run -p "PROMPT"
 ```
 
 ## Key Flags
@@ -103,19 +99,19 @@ Routing is automatic from the selected model.
 
 ## Run Explorer CLI
 
-`run-index.sh` provides index-based run inspection:
+`scripts/run-index.sh` provides index-based run inspection:
 
 ```bash
-"$INDEX" list                          # List recent runs
-"$INDEX" list --failed --json          # Failed runs as JSON
-"$INDEX" show @latest                  # Show last run details
-"$INDEX" report @latest                # Read last run's report
-"$INDEX" logs @latest --tools          # Tool call summary
-"$INDEX" files @latest                 # Files touched
-"$INDEX" stats                         # Aggregate statistics
-"$INDEX" continue @latest -p "fix X"   # Continue a run's session
-"$INDEX" retry @last-failed            # Retry a failed run
-"$INDEX" maintain --compact            # Archive old index entries
+scripts/run-index.sh list                          # List recent runs
+scripts/run-index.sh list --failed --json          # Failed runs as JSON
+scripts/run-index.sh show @latest                  # Show last run details
+scripts/run-index.sh report @latest                # Read last run's report
+scripts/run-index.sh logs @latest --tools          # Tool call summary
+scripts/run-index.sh files @latest                 # Files touched
+scripts/run-index.sh stats                         # Aggregate statistics
+scripts/run-index.sh continue @latest -p "PROMPT"  # Continue a run's session
+scripts/run-index.sh retry @last-failed            # Retry a failed run
+scripts/run-index.sh maintain --compact            # Archive old index entries
 ```
 
 Run references: full ID, unique prefix (8+ chars), `@latest`, `@last-failed`, `@last-completed`.

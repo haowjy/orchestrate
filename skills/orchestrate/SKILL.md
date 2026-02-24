@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh.
+description: Multi-model supervisor that discovers skills, picks models, and composes runs. Use when executing multi-step plans across multiple models.
 allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/scripts/run-index.sh *), Bash(*/run-agent/scripts/log-inspect.sh *), Bash(*/run-agent/scripts/load-model-guidance.sh *), Bash(*/orchestrate/scripts/load-skill-policy.sh *), Bash(git *), Bash(cat *), Bash(mkdir *), Bash(cp *), Bash(date *)
 ---
 
@@ -10,24 +10,25 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 
 ## Canonical Paths
 
-Skill-local (portable across `.agents/skills` and `.claude/skills`):
+Skill-local:
 
 - sibling skills (resolved by explicit name): `../<skill-name>/SKILL.md`
 - orchestration policy references: `references/*.md`
 - skill policy loader: `scripts/load-skill-policy.sh`
-- model guidance loader: `../run-agent/scripts/load-model-guidance.sh`
-- run explorer: `../run-agent/scripts/run-index.sh`
+- model guidance loader: `../run-agent/scripts/load-model-guidance.sh` (run-agent skill)
+- run explorer: `../run-agent/scripts/run-index.sh` (run-agent skill)
 
 Runtime: `.orchestrate/` (gitignored)
 
 - runs: `.orchestrate/runs/agent-runs/<run-id>/`
 - index: `.orchestrate/index/runs.jsonl`
+- session: `.orchestrate/session/plans/`
+- tracked skills config: `.orchestrate/tracked-skills`
 
-Runner path:
-```bash
-RUNNER=../run-agent/scripts/run-agent.sh
-INDEX=../run-agent/scripts/run-index.sh
-```
+Runner scripts (relative to this skill directory):
+
+- `../run-agent/scripts/run-agent.sh` — launch a subagent run
+- `../run-agent/scripts/run-index.sh` — inspect and manage runs
 
 ## Skill Set Policy
 
@@ -96,13 +97,13 @@ Key flags:
 Use `run-index.sh` to inspect and manage runs:
 
 ```bash
-"$INDEX" list                          # List recent runs
-"$INDEX" list --failed                 # List failed runs
-"$INDEX" show @latest                  # Show last run details
-"$INDEX" report @latest                # Read last run's report
-"$INDEX" stats --session $SESSION_ID   # Session statistics
-"$INDEX" continue @latest -p "fix X"   # Follow up on a run
-"$INDEX" retry @last-failed            # Retry a failed run
+../run-agent/scripts/run-index.sh list                          # List recent runs
+../run-agent/scripts/run-index.sh list --failed                 # List failed runs
+../run-agent/scripts/run-index.sh show @latest                  # Show last run details
+../run-agent/scripts/run-index.sh report @latest                # Read last run's report
+../run-agent/scripts/run-index.sh stats --session $SESSION_ID   # Session statistics
+../run-agent/scripts/run-index.sh continue @latest -p "fix X"   # Follow up on a run
+../run-agent/scripts/run-index.sh retry @last-failed            # Retry a failed run
 ```
 
 ## Cardinal Rules
@@ -126,31 +127,29 @@ Use `run-index.sh` to inspect and manage runs:
 ## Worked Example: Task Execution
 
 ```bash
-RUNNER=../run-agent/scripts/run-agent.sh
-INDEX=../run-agent/scripts/run-index.sh
 SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
 # 1. Implement — codex for cross-stack, sonnet for UI iteration
-"$RUNNER" --agent coder --skills smoke-test,scratchpad \
+../run-agent/scripts/run-agent.sh --agent coder --skills scratchpad \
     --session "$SESSION_ID" \
     -p "Implement the feature described in the plan." \
     -f path/to/plan.md
 
 # 2. Review — fan out to multiple model families for confidence
-"$RUNNER" --agent reviewer --model gpt-5.3-codex \
+../run-agent/scripts/run-agent.sh --agent reviewer --model gpt-5.3-codex \
     --session "$SESSION_ID" &
-"$RUNNER" --agent reviewer --model claude-opus-4-6 \
+../run-agent/scripts/run-agent.sh --agent reviewer --model claude-opus-4-6 \
     --session "$SESSION_ID" &
 wait
 # Read both reports, synthesize findings
 
 # 3. Commit — haiku for fast, clean commit messages
-"$RUNNER" --model claude-haiku-4-5 \
+../run-agent/scripts/run-agent.sh --model claude-haiku-4-5 \
     --session "$SESSION_ID" \
     -p "Stage and commit changes with a concise message."
 
 # 4. Check session stats
-"$INDEX" stats --session "$SESSION_ID"
+../run-agent/scripts/run-index.sh stats --session "$SESSION_ID"
 ```
 
 Adapt freely: skip review for trivial changes, run research before implementing unfamiliar code, add adversarial testing for security-critical paths.
@@ -169,8 +168,8 @@ If reviewers disagree materially, run a tiebreak review with a different model.
 PID-based log directories keep parallel runs separate automatically. Use `&` + `wait`:
 
 ```bash
-"$RUNNER" --model gpt-5.3-codex --skills research -p "Research approach A" &
-"$RUNNER" --model claude-sonnet-4-6 --skills research -p "Research approach B" &
+../run-agent/scripts/run-agent.sh --model gpt-5.3-codex --skills researching -p "Research approach A" &
+../run-agent/scripts/run-agent.sh --model claude-sonnet-4-6 --skills researching -p "Research approach B" &
 wait
 ```
 

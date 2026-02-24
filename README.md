@@ -10,20 +10,18 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 
 | Skill | Description |
 |---|---|
-| `orchestrate` | Multi-model supervisor — discovers skills, picks models, composes runs via run-agent.sh |
-| `run-agent` | Agent execution engine — composes prompts, routes models, and writes run artifacts |
+| `orchestrate` | Multi-model supervisor that discovers skills, picks models, and composes runs. Use when executing multi-step plans across multiple models |
+| `run-agent` | Agent execution engine that composes prompts, routes models, and writes run artifacts. Use when launching subagent runs |
 
 ### Optional skills
 
 | Skill | Description |
 |---|---|
-| `review` | Review code against project rules. Loads stack-specific rule files based on files in scope |
-| `research` | Research methodology for exploring codebases and evaluating approaches before planning |
-| `smoke-test` | Conventions for ad-hoc smoke tests and verification code |
-| `scratchpad` | Conventions for scratch notes and scope-based file organization |
-| `plan-slice` | Break the next slice from a plan into an implementable slice file |
-| `mermaid` | Rules and validation for writing Mermaid diagrams |
-| `model-guidance` | Model tendencies and selection guidance for orchestration decisions |
+| `reviewing` | Reviews code against project rules and curated reference files. Use when auditing files for violations, reviewing changes, or generating cleanup tasks |
+| `researching` | Explores codebases and evaluates approaches before planning. Use when investigating a problem space, comparing alternatives, or gathering context for a plan |
+| `scratchpad` | Conventions for disposable scratch code and verification scripts. Use when writing smoke tests, quick probes, or temporary artifacts during task execution |
+| `plan-slicing` | Breaks the next slice from a plan into an implementable slice file. Use when decomposing a multi-step plan into ordered work units |
+| `mermaid` | Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation |
 
 ### Agent profiles
 
@@ -73,7 +71,7 @@ echo 'orchestrate/' >> .gitignore
 
 ```bash
 bash orchestrate/sync.sh pull              # all skills + agents (default)
-bash orchestrate/sync.sh pull --skills review,mermaid   # selective
+bash orchestrate/sync.sh pull --skills reviewing,mermaid   # selective
 bash orchestrate/sync.sh pull --agents reviewer         # selective
 bash orchestrate/sync.sh --help            # see all options
 ```
@@ -130,7 +128,7 @@ INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
 "$RUNNER" --agent reviewer -p "Review auth changes"
 
 # Run with labels and session grouping
-"$RUNNER" --model gpt-5.3-codex --skills smoke-test \
+"$RUNNER" --model gpt-5.3-codex --skills scratchpad \
     --session my-session --label ticket=PAY-123 \
     -p "Implement feature"
 
@@ -138,7 +136,7 @@ INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
 "$RUNNER" --model claude-sonnet-4-6 --variant medium -p "Quick check"
 
 # Dry run
-"$RUNNER" --model gpt-5.3-codex --skills review --dry-run -p "Review changes"
+"$RUNNER" --model gpt-5.3-codex --skills reviewing --dry-run -p "Review changes"
 
 # Inspect runs
 "$INDEX" list
@@ -222,7 +220,7 @@ name: reviewer
 description: Code review with read-only access and web lookup
 model: claude-sonnet-4-6
 variant: high
-skills: [review]
+skills: [reviewing]
 tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]
 sandbox: danger-full-access
 variant-models:

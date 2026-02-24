@@ -19,15 +19,15 @@ This directory contains skill policy files used by `load-skill-policy.sh`.
 Each policy file lists recommended skills, one per line:
 
 ```
-review
-smoke-test
-research
+reviewing
+scratchpad
+researching
 ```
 
 Or with markdown bullets:
 
 ```
-- review
-- smoke-test
-- research
+- reviewing
+- scratchpad
+- researching
 ```

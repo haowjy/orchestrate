@@ -3,7 +3,7 @@ name: reviewer
 description: Code review with read-only access and web lookup
 model: claude-sonnet-4-6
 variant: high
-skills: [review]
+skills: [reviewing]
 tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]
 sandbox: danger-full-access
 variant-models:

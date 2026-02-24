@@ -1,6 +1,6 @@
 ---
-name: plan-slice
-description: Break the next slice from a plan into an implementable slice file.
+name: plan-slicing
+description: Breaks the next slice from a plan into an implementable slice file. Use when decomposing a multi-step plan into ordered work units.
 ---
 
 # Plan Slice

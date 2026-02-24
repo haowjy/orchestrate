@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "command": ".orchestrate/hooks/scripts/session-start.sh"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "command": ".orchestrate/hooks/scripts/session-end.sh"
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "EnterPlanMode",
+        "type": "command",
+        "command": ".orchestrate/hooks/scripts/plan-mode.sh"
+      }
+    ]
+  }
+}

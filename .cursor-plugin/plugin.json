@@ -9,5 +9,6 @@
   "license": "MIT",
   "keywords": ["orchestrator", "agents", "multi-agent", "automation"],
   "skills": "./skills/",
-  "agents": "./agents/"
+  "agents": "./agents/",
+  "hooks": "./hooks/.cursor/hooks.json"
 }

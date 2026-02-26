@@ -27,7 +27,7 @@ AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
 Named agent dry-run:
 
 ```bash
-"$AGENT_RUNNER" review --dry-run -v SLICES_DIR=/tmp/test
+"$AGENT_RUNNER" review --dry-run -v TASKS_DIR=/tmp/test
 ```
 
 Ad-hoc dry-run with explicit model + prompt:
@@ -44,7 +44,7 @@ Run a named agent without `--dry-run` to execute for real:
 
 ```bash
 AGENT_RUNNER=skills/run-agent/scripts/run-agent.sh
-"$AGENT_RUNNER" review -v SLICES_DIR=path/to/slices/01-foo
+"$AGENT_RUNNER" review -v TASKS_DIR=path/to/tasks/01-foo
 ```
 
 This writes run artifacts under `run-agent/.runs/` and session state under `orchestrate/.session/`.

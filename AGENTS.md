@@ -88,4 +88,4 @@ All scripts support `--help`. Run that first before reading source code to under
 - Tool names in frontmatter: PascalCase for Claude (`Read`, `Edit`, `Write`, `Bash`, `Glob`, `Grep`)
 - Template variables: generic `-v KEY=VALUE` (projects choose their own names)
 - Runtime artifact directories are untracked and should not be committed
-- No project-specific workflow concepts (plans, slices, handoffs) in the orchestration core
+- No project-specific workflow concepts (plans, tasks, handoffs) in the orchestration core

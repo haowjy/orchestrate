@@ -20,7 +20,7 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 | `reviewing` | Reviews code against project rules and curated reference files. Use when auditing files for violations, reviewing changes, or generating cleanup tasks |
 | `researching` | Explores codebases and evaluates approaches before planning. Use when investigating a problem space, comparing alternatives, or gathering context for a plan |
 | `scratchpad` | Conventions for disposable scratch code and verification scripts. Use when writing smoke tests, quick probes, or temporary artifacts during task execution |
-| `plan-slicing` | Breaks the next slice from a plan into an implementable slice file. Use when decomposing a multi-step plan into ordered work units |
+| `plan-tasking` | Breaks the next task from a plan into an implementable task file. Use when decomposing a multi-step plan into ordered work units |
 | `mermaid` | Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation |
 
 ### Agent profiles

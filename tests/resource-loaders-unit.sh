@@ -43,14 +43,14 @@ test_skill_policy_loader_precedence_and_parse() {
   cat > "$root/references/default.md" <<'EOF'
 # defaults
 run-agent
-- plan-slicing
+- plan-tasking
 EOF
 
   # Default only.
   local out
   out="$("$root/scripts/load-skill-policy.sh")"
   assert_contains "$out" "run-agent" "default policy should be loaded when no custom files exist"
-  assert_contains "$out" "plan-slicing" "default policy should include plan-slicing"
+  assert_contains "$out" "plan-tasking" "default policy should include plan-tasking"
 
   # Add custom policy -> default ignored.
   cat > "$root/references/custom.md" <<'EOF'

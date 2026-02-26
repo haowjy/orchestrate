@@ -9,7 +9,7 @@
 # - Lines starting with "#" are comments.
 
 run-agent
-plan-tasking
+plan-task
 reviewing
 scratchpad
 researching

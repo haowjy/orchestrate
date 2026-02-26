@@ -10,7 +10,7 @@ run-agent
 reviewing
 researching
 scratchpad
-plan-tasking
+plan-task
 mermaid
 
 # Optional agents (sync via --agents <name> or --all):

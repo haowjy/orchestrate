@@ -1,5 +1,5 @@
 ---
-name: plan-tasking
+name: plan-task
 description: Breaks the next task from a plan into an implementable task file. Use when decomposing a multi-step plan into ordered work units.
 ---
 

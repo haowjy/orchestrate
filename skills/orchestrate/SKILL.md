@@ -23,7 +23,7 @@ Runtime: `.orchestrate/` (gitignored)
 - runs: `.orchestrate/runs/agent-runs/<run-id>/`
 - index: `.orchestrate/index/runs.jsonl`
 - session: `.orchestrate/session/plans/`
-- tracked skills config: `.orchestrate/tracked-skills`
+- sticky skill replay source: previous session transcript (via `.orchestrate/session/prev-transcript` on clear)
 
 Runner scripts (relative to this skill directory):
 

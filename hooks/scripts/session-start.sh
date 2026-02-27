@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # session-start.sh — SessionStart hook (packaged with orchestrate plugin)
 #
-# Reloads skills that were active in the previous session after context loss.
+# Reloads sticky skills from the previous session after context loss.
 #
 # Triggers:
 # - compact: context compressed, skills may be lost. Scans current transcript.
@@ -10,12 +10,9 @@
 #   (written by session-end.sh), checks last ~20 lines for ExitPlanMode.
 #   Manual /clear (no ExitPlanMode) is treated as intentional reset — no reload.
 #
-# Detection is based on actual activation signals in the transcript, not
-# just mentions. This catches both user-initiated (/skill) and LLM-initiated
-# (Skill tool) activations.
-#
-# Tracked skills are read from .orchestrate/tracked-skills (one per line,
-# # comments). Falls back to (orchestrate, run-agent) if the file is missing.
+# Sticky set is reconstructed by replaying transcript events in order:
+# - activation signals add skills
+# - explicit unpin signals remove skills
 #
 # Input: JSON on stdin with { transcript_path, source, cwd, ... }
 # Output: JSON with additionalContext on stdout (exit 0)
@@ -69,41 +66,101 @@ if [[ -z "$TRANSCRIPT_PATH" || ! -f "$TRANSCRIPT_PATH" ]]; then
 fi
 
 # ============================================================================
-# Load tracked skills from config
+# Extract and replay sticky skill events from transcript
 # ============================================================================
-mapfile -t TRACKED_SKILLS < <(load_tracked_skills "$PROJECT_ROOT")
+extract_skill_events() {
+  local transcript_path="$1"
+  local line line_no=0 seq=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no + 1))
 
-if [[ ${#TRACKED_SKILLS[@]} -eq 0 ]]; then
-  exit 0
-fi
+    # Activation signal #1: "Launching skill: <name>"
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      local skill
+      skill="$(echo "$match" | sed -E 's/^Launching skill:[[:space:]]*//')"
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+      seq=$((seq + 1))
+      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
+    done < <(printf '%s\n' "$line" | grep -oE 'Launching skill:[[:space:]]*[A-Za-z0-9._-]+' || true)
 
-# ============================================================================
-# Detect which tracked skills were actually activated in the previous session
-# ============================================================================
+    # Activation signal #2: "Base directory for this skill: .../skills/<name>"
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      local skill
+      skill="$(echo "$match" | sed -E 's#.*skills/([A-Za-z0-9._-]+).*#\1#')"
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+      seq=$((seq + 1))
+      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
+    done < <(printf '%s\n' "$line" | grep -oE 'Base directory for this skill:.*skills/[A-Za-z0-9._-]+' || true)
+
+    # Activation signal #3: Skill tool invocation payload on one line
+    if printf '%s\n' "$line" | grep -qE '"name"[[:space:]]*:[[:space:]]*"Skill"'; then
+      while IFS= read -r match; do
+        [[ -n "$match" ]] || continue
+        local skill
+        skill="$(echo "$match" | sed -E 's/^"skill"[[:space:]]*:[[:space:]]*"([A-Za-z0-9._-]+)"/\1/')"
+        skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+        seq=$((seq + 1))
+        printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
+      done < <(printf '%s\n' "$line" | grep -oE '"skill"[[:space:]]*:[[:space:]]*"[A-Za-z0-9._-]+"' || true)
+    fi
+
+    # Unpin signal #1: "/unpin <name>"
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      local skill
+      skill="$(echo "$match" | sed -E 's#^/unpin[[:space:]]+([A-Za-z0-9._-]+)$#\1#')"
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+      seq=$((seq + 1))
+      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
+    done < <(printf '%s\n' "$line" | grep -oE '/unpin[[:space:]]+[A-Za-z0-9._-]+' || true)
+
+    # Unpin signal #2: "unpin skill: <name>"
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      local skill
+      skill="$(echo "$match" | sed -E 's/^[Uu]npin[[:space:]]+skill:[[:space:]]*([A-Za-z0-9._-]+)$/\1/')"
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+      seq=$((seq + 1))
+      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
+    done < <(printf '%s\n' "$line" | grep -oE '[Uu]npin[[:space:]]+skill:[[:space:]]*[A-Za-z0-9._-]+' || true)
+
+    # Unpin signal #3: "SKILL_UNPIN:<name>"
+    while IFS= read -r match; do
+      [[ -n "$match" ]] || continue
+      local skill
+      skill="$(echo "$match" | sed -E 's/^SKILL_UNPIN:([A-Za-z0-9._-]+)$/\1/')"
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
+      seq=$((seq + 1))
+      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
+    done < <(printf '%s\n' "$line" | grep -oE 'SKILL_UNPIN:[A-Za-z0-9._-]+' || true)
+  done < "$transcript_path"
+}
+
+declare -A ACTIVE_SKILLS=()
+declare -A SEEN_SKILLS=()
+ORDERED_SKILLS=()
+
+while IFS=$'\t' read -r _line _seq action skill; do
+  [[ -n "$skill" ]] || continue
+  case "$action" in
+    add)
+      ACTIVE_SKILLS["$skill"]=1
+      if [[ -z "${SEEN_SKILLS[$skill]+x}" ]]; then
+        ORDERED_SKILLS+=("$skill")
+        SEEN_SKILLS["$skill"]=1
+      fi
+      ;;
+    remove)
+      unset 'ACTIVE_SKILLS[$skill]'
+      ;;
+  esac
+done < <(extract_skill_events "$TRANSCRIPT_PATH")
+
 DETECTED_SKILLS=()
-
-for skill in "${TRACKED_SKILLS[@]}"; do
-  # Detection signals (ordered by reliability):
-  #
-  # 1. "Launching skill: <name>" — tool result confirming the skill was loaded.
-  #    Definitive activation marker for both user-initiated (/skill) and
-  #    LLM-initiated (Skill tool) activations.
-  #
-  # 2. "Base directory for this skill: .../skills/<name>" — the isMeta message
-  #    that injects the SKILL.md content. Confirms the skill instructions were
-  #    actually loaded into context.
-  #
-  # 3. "name":"Skill" + "skill":"<name>" — the Skill tool invocation itself.
-  #    May appear even if activation failed, but useful as a fallback signal.
-  #
-  # We check all three to be robust against transcript format variations.
-
-  if grep -qF "Launching skill: ${skill}" "$TRANSCRIPT_PATH" 2>/dev/null; then
-    DETECTED_SKILLS+=("$skill")
-  elif grep -q "Base directory for this skill:.*skills/${skill}" "$TRANSCRIPT_PATH" 2>/dev/null; then
-    DETECTED_SKILLS+=("$skill")
-  elif grep -qE "\"name\":\s*\"Skill\"" "$TRANSCRIPT_PATH" 2>/dev/null && \
-       grep -qE "\"skill\":\s*\"${skill}\"" "$TRANSCRIPT_PATH" 2>/dev/null; then
+for skill in "${ORDERED_SKILLS[@]}"; do
+  if [[ -n "${ACTIVE_SKILLS[$skill]+x}" ]]; then
     DETECTED_SKILLS+=("$skill")
   fi
 done
@@ -130,9 +187,9 @@ fi
 # Build additionalContext
 # ============================================================================
 LINES=()
-LINES+=("**Auto-detected skills from previous session — load these before proceeding:**")
+LINES+=("**Sticky skills from previous session — load these before proceeding:**")
 for skill in "${DETECTED_SKILLS[@]}"; do
-  LINES+=("- \`/$skill\` was active in the previous conversation. Load it now with the Skill tool.")
+  LINES+=("- \`/$skill\` remains in the sticky reload set from the previous conversation.")
 done
 
 if [[ -n "$ACTIVE_PLAN" ]]; then

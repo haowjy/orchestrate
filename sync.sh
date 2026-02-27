@@ -640,17 +640,6 @@ ensure_runtime_dirs() {
   mkdir -p "$orchestrate_rt/runs/agent-runs"
   mkdir -p "$orchestrate_rt/index"
   mkdir -p "$orchestrate_rt/session"
-
-  # Create default tracked-skills if it doesn't exist
-  if [[ ! -f "$orchestrate_rt/tracked-skills" ]]; then
-    cat > "$orchestrate_rt/tracked-skills" <<'TRACKED'
-# Skills to auto-reload on session start.
-# One skill name per line. Lines starting with # are comments.
-orchestrate
-run-agent
-TRACKED
-    echo "  Created default .orchestrate/tracked-skills"
-  fi
 }
 
 do_preview_or_apply_pull() {

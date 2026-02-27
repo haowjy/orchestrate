@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # lib.sh — Shared helpers for orchestrate hooks.
 #
-# Sourced by hook scripts. Provides project-root detection, hook-root
-# resolution, and tracked-skills loading.
+# Sourced by hook scripts. Provides project-root detection and hook-root
+# resolution.
 
 # find_project_root — walk up from CWD (or $1) looking for .git
 find_project_root() {
@@ -24,26 +24,4 @@ get_hook_root() {
   scripts_dir="$(cd "$(dirname "$caller")" && pwd)"
   # scripts/ is one level below hooks/
   dirname "$scripts_dir"
-}
-
-# load_tracked_skills — read .orchestrate/tracked-skills (one skill per line).
-# Falls back to default list if the file doesn't exist.
-# Usage: mapfile -t skills < <(load_tracked_skills "$project_root")
-load_tracked_skills() {
-  local project_root="$1"
-  local tracked_file="$project_root/.orchestrate/tracked-skills"
-
-  if [[ -f "$tracked_file" ]]; then
-    while IFS= read -r line; do
-      # Strip comments and whitespace
-      line="${line%%#*}"
-      line="$(echo "$line" | xargs)"
-      [[ -z "$line" ]] && continue
-      echo "$line"
-    done < "$tracked_file"
-  else
-    # Default tracked skills
-    echo "orchestrate"
-    echo "run-agent"
-  fi
 }

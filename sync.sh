@@ -315,14 +315,22 @@ merge_cursor_hooks() {
 
 sync_platform_hooks() {
   local hooks_dir="$ORCHESTRATE_DIR/hooks"
-  local hooks_dest="$PROJECT_ROOT/.orchestrate/hooks/scripts"
+  local hooks_scripts_src="$hooks_dir/scripts"
 
-  # Copy shared hook scripts to .orchestrate/hooks/scripts/
-  if [[ -d "$hooks_dir/scripts" ]]; then
-    mkdir -p "$hooks_dest"
-    cp "$hooks_dir/scripts/"*.sh "$hooks_dest/"
-    chmod +x "$hooks_dest/"*.sh
-    echo "  Synced hook scripts to .orchestrate/hooks/scripts/"
+  # Sync shared hook scripts into harness-local directories.
+  if [[ -d "$hooks_scripts_src" ]]; then
+    local scripts_dests=(
+      "$PROJECT_ROOT/.claude/hooks/scripts"
+      "$PROJECT_ROOT/.cursor/hooks/scripts"
+      "$PROJECT_ROOT/.opencode/hooks/scripts"
+    )
+    local dest
+    for dest in "${scripts_dests[@]}"; do
+      mkdir -p "$dest"
+      cp "$hooks_scripts_src/"*.sh "$dest/"
+      chmod +x "$dest/"*.sh
+    done
+    echo "  Synced hook scripts to .claude/.cursor/.opencode hook directories"
   fi
 
   # OpenCode — copy orchestrate.ts plugin

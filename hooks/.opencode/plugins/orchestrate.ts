@@ -3,12 +3,12 @@
 // Thin wrapper that delegates to the shared shell scripts via execSync,
 // passing JSON on stdin and reading additionalContext from stdout.
 //
-// Hook scripts are copied to .orchestrate/hooks/scripts/ by sync.sh pull.
+// Hook scripts are synced into .opencode/hooks/scripts/ by sync.sh pull.
 
 import { execSync } from "child_process";
 import { resolve } from "path";
 
-const SCRIPTS_DIR = resolve(process.cwd(), ".orchestrate/hooks/scripts");
+const SCRIPTS_DIR = resolve(process.cwd(), ".opencode/hooks/scripts");
 
 function runHook(script: string, input: Record<string, unknown>): string | undefined {
   try {

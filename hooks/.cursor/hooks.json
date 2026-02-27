@@ -4,20 +4,20 @@
     "sessionStart": [
       {
         "type": "command",
-        "command": ".orchestrate/hooks/scripts/session-start.sh"
+        "command": ".cursor/hooks/scripts/session-start.sh"
       }
     ],
     "sessionEnd": [
       {
         "type": "command",
-        "command": ".orchestrate/hooks/scripts/session-end.sh"
+        "command": ".cursor/hooks/scripts/session-end.sh"
       }
     ],
     "preToolUse": [
       {
         "matcher": "EnterPlanMode",
         "type": "command",
-        "command": ".orchestrate/hooks/scripts/plan-mode.sh"
+        "command": ".cursor/hooks/scripts/plan-mode.sh"
       }
     ]
   }

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# sync.sh — Sync skills and agents between submodule, .agents/, and .claude/.
+# sync.sh — Sync skills and agents between orchestrate source, .agents/, and .claude/.
 #
-# Default behavior (pull/push):
+# Default behavior (sync):
 # - syncs all skills + agents found in source dir
 # - applies automatically when there are no conflicts
 # - blocks when conflicts exist and prints conflict list
 # - use --overwrite to apply despite conflicts
 #
-# pull also creates runtime directories (.orchestrate/runs/, .orchestrate/index/).
+# sync also creates runtime directories (.orchestrate/runs/, .orchestrate/index/).
 
 set -euo pipefail
 
@@ -37,17 +37,16 @@ usage() {
 Usage: sync.sh <command> [options]
 
 Commands:
-  pull     Sync submodule -> .agents/ + .claude/ (skills + agents)
-  push     Sync .claude/ -> .agents/ + submodule (skills + agents)
+  sync     Sync orchestrate -> .agents/ + .claude/ (skills + agents)
   status   Show differences between all three locations
 
-Filtering (pull/push):
+Filtering (sync):
   --skills skill1,skill2   Only sync specific skills (validated against MANIFEST)
   --agents agent1,agent2   Only sync specific agent profiles (validated against MANIFEST)
   --all                    Sync all skills + all agents (default behavior)
-  --include-hooks          Also sync platform hooks (.cursor, .opencode) [pull only]
+  --include-hooks          Also sync platform hooks (.cursor, .opencode) [sync only]
 
-Default mode (pull/push):
+Default mode (sync):
 - apply automatically when no conflicts are detected
 - stop and print conflicting files when conflicts exist
 
@@ -83,7 +82,7 @@ require_option_value() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    pull|push|status) COMMAND="$1"; shift ;;
+    sync|status) COMMAND="$1"; shift ;;
     --overwrite) OVERWRITE=true; shift ;;
     --diff) SHOW_DIFF=true; shift ;;
     --exclude)
@@ -650,7 +649,7 @@ ensure_runtime_dirs() {
   mkdir -p "$orchestrate_rt/session"
 }
 
-do_preview_or_apply_pull() {
+do_preview_or_apply_sync() {
   # Always ensure runtime directories exist on pull, even if no files changed
   ensure_runtime_dirs
 
@@ -675,7 +674,7 @@ do_preview_or_apply_pull() {
   if has_conflicts && [[ "$OVERWRITE" == false ]]; then
     print_preview_summary
     echo ""
-    echo "Conflicts detected. No skill/agent files were changed."
+    echo "Conflicts detected. No files were changed."
     echo "Use --overwrite to apply all updates anyway."
     echo "Use --diff for quick content diffs."
     exit 2
@@ -690,42 +689,9 @@ do_preview_or_apply_pull() {
   apply_pull
 }
 
-do_preview_or_apply_push() {
-  preview_push
-
-  if [[ "$SHOW_DIFF" == true ]]; then
-    print_quick_diff
-    echo ""
-  fi
-
-  if ! has_pending_changes; then
-    echo "No pending sync changes."
-    echo "No action required."
-    return
-  fi
-
-  if has_conflicts && [[ "$OVERWRITE" == false ]]; then
-    print_preview_summary
-    echo ""
-    echo "Conflicts detected. No files were changed."
-    echo "Use --overwrite to apply all updates anyway."
-    echo "Use --diff for quick content diffs."
-    exit 2
-  fi
-
-  if has_conflicts && [[ "$OVERWRITE" == true ]]; then
-    echo "Conflicts detected; applying because --overwrite was provided."
-  else
-    echo "No conflicts detected; applying sync updates."
-  fi
-
-  apply_push
-}
-
 # --- Dispatch ---
 
 case "$COMMAND" in
-  pull)   do_preview_or_apply_pull ;;
-  push)   do_preview_or_apply_push ;;
+  sync)   do_preview_or_apply_sync ;;
   status) do_status ;;
 esac

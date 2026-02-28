@@ -15,9 +15,9 @@
 # - explicit unpin signals remove skills
 #
 # Optional allowlist file (repo-local, not synced by sync.sh):
-# - .orchestrate/config/sticky-skills-allowlist.txt
-# - one skill per line (or comma-separated), case-insensitive
-# - lines may include leading "/" and "#" comments
+# - .orchestrate/config/sticky-skills.json
+# - format: { "allowlist": ["run-agent", "mermaid", "orchestrate"] }
+# - case-insensitive; values may include leading "/"
 #
 # Input: JSON on stdin with { transcript_path, source, cwd, ... }
 # Output: JSON with additionalContext on stdout (exit 0)
@@ -47,24 +47,17 @@ esac
 PROJECT_ROOT="$(find_project_root "${CWD:-$PWD}")" || exit 0
 
 # Optional sticky-skill allowlist (repo-local customization).
-ALLOWLIST_FILE="$PROJECT_ROOT/.orchestrate/config/sticky-skills-allowlist.txt"
+ALLOWLIST_FILE="$PROJECT_ROOT/.orchestrate/config/sticky-skills.json"
 declare -A ALLOWED_SKILLS=()
 if [[ -f "$ALLOWLIST_FILE" ]]; then
-  while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
-    # Strip comments and surrounding whitespace.
-    raw_line="${raw_line%%#*}"
-    raw_line="$(echo "$raw_line" | xargs)"
-    [[ -n "$raw_line" ]] || continue
-
-    # Support comma-separated or one-per-line values.
-    IFS=',' read -ra parts <<< "$raw_line"
-    for part in "${parts[@]}"; do
-      skill="$(echo "$part" | tr '[:upper:]' '[:lower:]' | xargs)"
+  if command -v jq >/dev/null 2>&1; then
+    while IFS= read -r skill || [[ -n "$skill" ]]; do
+      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]' | xargs)"
       skill="${skill#/}"  # Allow "/skill" syntax in file.
       [[ -n "$skill" ]] || continue
       ALLOWED_SKILLS["$skill"]=1
-    done
-  done < "$ALLOWLIST_FILE"
+    done < <(jq -r '.allowlist // [] | .[] | select(type=="string")' "$ALLOWLIST_FILE" 2>/dev/null || true)
+  fi
 fi
 
 # On clear, use the previous transcript saved by session-end.sh.

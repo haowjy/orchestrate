@@ -14,6 +14,11 @@
 # - activation signals add skills
 # - explicit unpin signals remove skills
 #
+# Optional allowlist file (repo-local, not synced by sync.sh):
+# - .orchestrate/config/sticky-skills-allowlist.txt
+# - one skill per line (or comma-separated), case-insensitive
+# - lines may include leading "/" and "#" comments
+#
 # Input: JSON on stdin with { transcript_path, source, cwd, ... }
 # Output: JSON with additionalContext on stdout (exit 0)
 
@@ -40,6 +45,27 @@ esac
 
 # Resolve project root from CWD
 PROJECT_ROOT="$(find_project_root "${CWD:-$PWD}")" || exit 0
+
+# Optional sticky-skill allowlist (repo-local customization).
+ALLOWLIST_FILE="$PROJECT_ROOT/.orchestrate/config/sticky-skills-allowlist.txt"
+declare -A ALLOWED_SKILLS=()
+if [[ -f "$ALLOWLIST_FILE" ]]; then
+  while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+    # Strip comments and surrounding whitespace.
+    raw_line="${raw_line%%#*}"
+    raw_line="$(echo "$raw_line" | xargs)"
+    [[ -n "$raw_line" ]] || continue
+
+    # Support comma-separated or one-per-line values.
+    IFS=',' read -ra parts <<< "$raw_line"
+    for part in "${parts[@]}"; do
+      skill="$(echo "$part" | tr '[:upper:]' '[:lower:]' | xargs)"
+      skill="${skill#/}"  # Allow "/skill" syntax in file.
+      [[ -n "$skill" ]] || continue
+      ALLOWED_SKILLS["$skill"]=1
+    done
+  done < "$ALLOWLIST_FILE"
+fi
 
 # On clear, use the previous transcript saved by session-end.sh.
 # Only reload if the previous session ended with ExitPlanMode (plan acceptance).
@@ -161,6 +187,9 @@ done < <(extract_skill_events "$TRANSCRIPT_PATH")
 DETECTED_SKILLS=()
 for skill in "${ORDERED_SKILLS[@]}"; do
   if [[ -n "${ACTIVE_SKILLS[$skill]+x}" ]]; then
+    if [[ ${#ALLOWED_SKILLS[@]} -gt 0 && -z "${ALLOWED_SKILLS[$skill]+x}" ]]; then
+      continue
+    fi
     DETECTED_SKILLS+=("$skill")
   fi
 done

@@ -4,20 +4,8 @@
 # Reloads sticky skills from the previous session after context loss.
 #
 # Triggers:
-# - compact: context compressed, skills may be lost. Scans current transcript.
+# - compact: context compressed, skills may be lost.
 # - clear: only if the previous session ended with ExitPlanMode (plan acceptance).
-#   Reads the previous transcript path from .orchestrate/session/prev-transcript
-#   (written by session-end.sh), checks last ~20 lines for ExitPlanMode.
-#   Manual /clear (no ExitPlanMode) is treated as intentional reset — no reload.
-#
-# Sticky set is reconstructed by replaying transcript events in order:
-# - activation signals add skills
-# - explicit unpin signals remove skills
-#
-# Optional allowlist file (repo-local, not synced by sync.sh):
-# - .orchestrate/config/sticky-skills.json
-# - format: { "allowlist": ["run-agent", "mermaid", "orchestrate"] }
-# - case-insensitive; values may include leading "/"
 #
 # Input: JSON on stdin with { transcript_path, source, cwd, ... }
 # Output: JSON with additionalContext on stdout (exit 0)
@@ -28,6 +16,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: session-start.sh
+
+Reads hook payload JSON from stdin and emits optional additionalContext JSON.
+USAGE
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+  esac
+done
 
 # ============================================================================
 # Parse hook input
@@ -84,77 +89,117 @@ if [[ -z "$TRANSCRIPT_PATH" || ! -f "$TRANSCRIPT_PATH" ]]; then
   exit 0
 fi
 
+# For compact hooks, only scan the most recent segment:
+# previous SessionStart:compact -> current SessionStart:compact.
+SCOPED_TRANSCRIPT="$TRANSCRIPT_PATH"
+TMP_SCOPE=""
+cleanup_scope() {
+  if [[ -n "$TMP_SCOPE" && -f "$TMP_SCOPE" ]]; then
+    rm -f "$TMP_SCOPE"
+  fi
+}
+trap cleanup_scope EXIT
+
+compute_compact_scope() {
+  local transcript_path="$1"
+  awk '
+    /"hookEvent":"SessionStart"/ && /"hookName":"SessionStart:compact"/ {
+      prev=last
+      last=NR
+    }
+    END {
+      if (last == 0) {
+        print "1 0"
+      } else if (prev == 0) {
+        print "1 " (last - 1)
+      } else {
+        print (prev + 1) " " (last - 1)
+      }
+    }
+  ' "$transcript_path"
+}
+
+if [[ "$SOURCE" == "compact" ]]; then
+  read -r SCOPE_START SCOPE_END < <(compute_compact_scope "$TRANSCRIPT_PATH")
+  if [[ -n "${SCOPE_START:-}" && -n "${SCOPE_END:-}" ]] && (( SCOPE_END >= SCOPE_START )); then
+    TMP_SCOPE="$(mktemp)"
+    sed -n "${SCOPE_START},${SCOPE_END}p" "$TRANSCRIPT_PATH" > "$TMP_SCOPE"
+    SCOPED_TRANSCRIPT="$TMP_SCOPE"
+  fi
+fi
+
 # ============================================================================
 # Extract and replay sticky skill events from transcript
 # ============================================================================
 extract_skill_events() {
   local transcript_path="$1"
-  local line line_no=0 seq=0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line_no=$((line_no + 1))
+  awk '
+    function emit(action, value, token) {
+      token = value
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", token)
+      gsub(/^\/+/, "", token)
+      if (token == "") {
+        return
+      }
+      seq += 1
+      printf "%d\t%d\t%s\t%s\n", NR, seq, action, tolower(token)
+    }
 
-    # Activation signal #1: "Launching skill: <name>"
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      local skill
-      skill="$(echo "$match" | sed -E 's/^Launching skill:[[:space:]]*//')"
-      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-      seq=$((seq + 1))
-      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
-    done < <(printf '%s\n' "$line" | grep -oE 'Launching skill:[[:space:]]*[A-Za-z0-9._-]+' || true)
+    {
+      line = $0
 
-    # Activation signal #2: "Base directory for this skill: .../skills/<name>"
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      local skill
-      skill="$(echo "$match" | sed -E 's#.*skills/([A-Za-z0-9._-]+).*#\1#')"
-      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-      seq=$((seq + 1))
-      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
-    done < <(printf '%s\n' "$line" | grep -oE 'Base directory for this skill:.*skills/[A-Za-z0-9._-]+' || true)
+      rest = line
+      while (match(rest, /Launching skill:[[:space:]]*[A-Za-z0-9._-]+/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        sub(/^Launching skill:[[:space:]]*/, "", token)
+        emit("add", token)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
 
-    # Activation signal #3: Skill tool invocation payload on one line
-    if printf '%s\n' "$line" | grep -qE '"name"[[:space:]]*:[[:space:]]*"Skill"'; then
-      while IFS= read -r match; do
-        [[ -n "$match" ]] || continue
-        local skill
-        skill="$(echo "$match" | sed -E 's/^"skill"[[:space:]]*:[[:space:]]*"([A-Za-z0-9._-]+)"/\1/')"
-        skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-        seq=$((seq + 1))
-        printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "add" "$skill"
-      done < <(printf '%s\n' "$line" | grep -oE '"skill"[[:space:]]*:[[:space:]]*"[A-Za-z0-9._-]+"' || true)
-    fi
+      rest = line
+      while (match(rest, /Base directory for this skill:.*skills\/[A-Za-z0-9._-]+/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        sub(/^.*skills\//, "", token)
+        emit("add", token)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
 
-    # Unpin signal #1: "/unpin <name>"
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      local skill
-      skill="$(echo "$match" | sed -E 's#^/unpin[[:space:]]+([A-Za-z0-9._-]+)$#\1#')"
-      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-      seq=$((seq + 1))
-      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
-    done < <(printf '%s\n' "$line" | grep -oE '/unpin[[:space:]]+[A-Za-z0-9._-]+' || true)
+      if (line ~ /"name"[[:space:]]*:[[:space:]]*"Skill"/) {
+        rest = line
+        while (match(rest, /"skill"[[:space:]]*:[[:space:]]*"[A-Za-z0-9._-]+"/)) {
+          token = substr(rest, RSTART, RLENGTH)
+          sub(/^"skill"[[:space:]]*:[[:space:]]*"/, "", token)
+          sub(/"$/, "", token)
+          emit("add", token)
+          rest = substr(rest, RSTART + RLENGTH)
+        }
+      }
 
-    # Unpin signal #2: "unpin skill: <name>"
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      local skill
-      skill="$(echo "$match" | sed -E 's/^[Uu]npin[[:space:]]+skill:[[:space:]]*([A-Za-z0-9._-]+)$/\1/')"
-      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-      seq=$((seq + 1))
-      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
-    done < <(printf '%s\n' "$line" | grep -oE '[Uu]npin[[:space:]]+skill:[[:space:]]*[A-Za-z0-9._-]+' || true)
+      rest = line
+      while (match(rest, /\/unpin[[:space:]]+[A-Za-z0-9._-]+/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        sub(/^\/unpin[[:space:]]+/, "", token)
+        emit("remove", token)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
 
-    # Unpin signal #3: "SKILL_UNPIN:<name>"
-    while IFS= read -r match; do
-      [[ -n "$match" ]] || continue
-      local skill
-      skill="$(echo "$match" | sed -E 's/^SKILL_UNPIN:([A-Za-z0-9._-]+)$/\1/')"
-      skill="$(echo "$skill" | tr '[:upper:]' '[:lower:]')"
-      seq=$((seq + 1))
-      printf '%d\t%d\t%s\t%s\n' "$line_no" "$seq" "remove" "$skill"
-    done < <(printf '%s\n' "$line" | grep -oE 'SKILL_UNPIN:[A-Za-z0-9._-]+' || true)
-  done < "$transcript_path"
+      rest = line
+      while (match(rest, /[Uu]npin[[:space:]]+skill:[[:space:]]*[A-Za-z0-9._-]+/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        sub(/^[Uu]npin[[:space:]]+skill:[[:space:]]*/, "", token)
+        emit("remove", token)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+
+      rest = line
+      while (match(rest, /SKILL_UNPIN:[A-Za-z0-9._-]+/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        sub(/^SKILL_UNPIN:/, "", token)
+        emit("remove", token)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+    }
+  ' "$transcript_path"
 }
 
 declare -A ACTIVE_SKILLS=()
@@ -175,7 +220,7 @@ while IFS=$'\t' read -r _line _seq action skill; do
       unset 'ACTIVE_SKILLS[$skill]'
       ;;
   esac
-done < <(extract_skill_events "$TRANSCRIPT_PATH")
+done < <(extract_skill_events "$SCOPED_TRANSCRIPT")
 
 DETECTED_SKILLS=()
 for skill in "${ORDERED_SKILLS[@]}"; do

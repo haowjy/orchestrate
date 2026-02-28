@@ -1,6 +1,6 @@
 # Orchestrate
 
-Intent-first multi-model supervisor toolkit for Claude Code, Codex, and OpenCode.
+Intent-first multi-model primary-agent toolkit for Claude Code, Codex, and OpenCode.
 
 A run is `model + skills + prompt`. Skills are discovered at runtime from `orchestrate/skills/*/SKILL.md` frontmatter — no static agent definitions.
 
@@ -10,7 +10,7 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 
 | Skill | Description |
 |---|---|
-| `orchestrate` | Multi-model supervisor that discovers skills, picks models, and composes runs. Use when executing multi-step plans across multiple models |
+| `orchestrate` | Multi-model primary agent that discovers skills, picks models, and composes runs. Use when executing multi-step plans across multiple models |
 | `run-agent` | Agent execution engine that composes prompts, routes models, and writes run artifacts. Use when launching subagent runs |
 
 ### Optional skills

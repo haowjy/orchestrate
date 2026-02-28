@@ -55,8 +55,8 @@ AGENT_NAME=""
 AGENT_BODY=""                    # markdown body (frontmatter stripped), used for Codex prompt injection
 AGENT_TOOLS=""                   # comma-separated tool allowlist from agent profile
 AGENT_SANDBOX=""                 # Codex sandbox: read-only, workspace-write, danger-full-access (or empty)
-# Kill hung harness invocations (default: 15 minutes).
-TIMEOUT_MINUTES=15
+# Kill hung harness invocations (default: 30 minutes).
+TIMEOUT_MINUTES=30
 SKILLS=()
 PROMPT=""
 CLI_PROMPT=""

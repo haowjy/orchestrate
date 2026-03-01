@@ -488,7 +488,7 @@ detect_opencode_error_event() {
 }
 
 do_execute() {
-  local cli_display output_log
+  local cli_display output_log run_index_base_cmd show_cmd report_cmd files_cmd logs_cmd
   cli_display="$(format_cli_cmd)"
 
   # Set up logging and write start index row for crash visibility
@@ -496,6 +496,11 @@ do_execute() {
   export ORCHESTRATE_RUN_ID="$RUN_ID"
   output_log="$LOG_DIR/output.jsonl"
   write_log_params "$cli_display"
+  run_index_base_cmd="$SCRIPT_DIR/run-index.sh --repo \"$REPO_ROOT\""
+  show_cmd="$run_index_base_cmd show \"$RUN_ID\""
+  report_cmd="$run_index_base_cmd report \"$RUN_ID\""
+  files_cmd="$run_index_base_cmd files \"$RUN_ID\""
+  logs_cmd="$run_index_base_cmd logs \"$RUN_ID\""
 
   # Capture git HEAD before execution (best-effort)
   HEAD_BEFORE=""
@@ -524,7 +529,12 @@ do_execute() {
   # Save composed prompt
   echo "$COMPOSED_PROMPT" > "$LOG_DIR/input.md"
 
-  echo "[run-agent] Model: $MODEL | Variant: $VARIANT | Log: $LOG_DIR" >&2
+  echo "[run-agent] Run: $RUN_ID | Model: $MODEL | Variant: $VARIANT" >&2
+  echo "[run-agent] run-index commands:" >&2
+  echo "[run-agent]   show: $show_cmd" >&2
+  echo "[run-agent]   report: $report_cmd" >&2
+  echo "[run-agent]   files: $files_cmd" >&2
+  echo "[run-agent]   logs: $logs_cmd" >&2
 
   # Execute via argv array — no eval needed.
   cd "$WORK_DIR"
@@ -630,6 +640,7 @@ do_execute() {
     echo "---" >&2
   fi
 
-  echo "[run-agent] Done (exit=$exit_code, duration=${duration_seconds}s). Log: $LOG_DIR" >&2
+  echo "[run-agent] Done (exit=$exit_code, duration=${duration_seconds}s). Run: $RUN_ID" >&2
+  echo "[run-agent] Report: $report_cmd" >&2
   exit "$exit_code"
 }

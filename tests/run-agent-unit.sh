@@ -487,7 +487,7 @@ test_agent_codex_sandbox_inference() {
   assert_not_contains "$output" "--dangerously-bypass-approvals-and-sandbox" "agent with sandbox should not use bypass flag"
 }
 
-test_agent_appears_in_run_id() {
+test_run_id_is_compact() {
   local test_tmp="$1"
   local workdir="$test_tmp/work-agent-runid"
   mkdir -p "$workdir"
@@ -502,7 +502,11 @@ test_agent_appears_in_run_id() {
   local run_id
   run_id="$(basename "$run_dir")"
 
-  assert_contains "$run_id" "__reviewer__" "run ID should contain agent name instead of task-type"
+  if [[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{6}Z__[0-9]+[0-9a-f]{4}$ ]]; then
+    fail "  run ID should use compact timestamp+suffix format"$'\n'"  Got: $run_id"
+  fi
+  assert_not_contains "$run_id" "reviewer" "compact run ID should not embed agent name"
+  assert_not_contains "$run_id" "gpt-5.3-codex" "compact run ID should not embed model name"
 }
 
 test_agent_recorded_in_params_and_index() {
@@ -537,6 +541,100 @@ test_agent_recorded_in_params_and_index() {
   assert_contains "$index_raw" "\"agent\":\"reviewer\"" "index start row should contain agent field"
 }
 
+test_run_index_files_regenerates_from_output_log() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-files-fallback"
+  mkdir -p "$workdir"
+
+  cat > "$test_tmp/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null || true
+echo '{"thread_id":"thread-files-fallback"}'
+echo '{"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"text","text":"Touched src/app.ts and README.md"}]}}'
+echo '{"file_path":"src/app.ts"}'
+echo '{"path":"README.md"}'
+EOF
+  chmod +x "$test_tmp/bin/codex"
+
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
+
+  local run_dir
+  run_dir="$(find "$workdir/.orchestrate/runs/agent-runs" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+  # Force cmd_files() to derive from output.jsonl.
+  rm -f "$run_dir/files-touched.txt" "$run_dir/files-touched.nul"
+
+  local output
+  output="$(
+    cd "$workdir"
+    "$INDEX" files @latest
+  )"
+
+  assert_contains "$output" "src/app.ts" "run-index files should extract paths from output log when artifacts are missing"
+  assert_contains "$output" "README.md" "run-index files should include README.md from output log extraction"
+  assert_file_exists "$run_dir/files-touched.txt" "run-index files should regenerate files-touched.txt"
+  assert_file_exists "$run_dir/files-touched.nul" "run-index files should regenerate files-touched.nul"
+}
+
+test_run_index_logs_default_shows_last_message_and_flags() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-logs-default"
+  mkdir -p "$workdir"
+  setup_fake_cli_bin "$test_tmp/bin"
+
+  FAKE_ARGS_LOG="$test_tmp/args-logs-default.log" \
+  FAKE_STDIN_LOG="$test_tmp/stdin-logs-default.log" \
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
+
+  local output
+  output="$(
+    cd "$workdir"
+    "$INDEX" logs @latest
+  )"
+
+  assert_contains "$output" "base" "run-index logs default should print the last assistant message"
+  assert_contains "$output" "Other logs flags:" "run-index logs default should show available flags"
+  assert_contains "$output" "--limit N          Messages per page (default: 1)" "run-index logs default should state --limit default"
+  assert_contains "$output" "--cursor N         Offset from newest message (default: 0)" "run-index logs default should state --cursor default"
+}
+
+test_run_index_logs_cursor_and_limit_page_messages() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-logs-pagination"
+  mkdir -p "$workdir"
+
+  cat > "$test_tmp/bin/codex" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null || true
+echo '{"thread_id":"thread-logs-pagination"}'
+echo '{"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"text","text":"first assistant message"}]}}'
+echo '{"type":"item.completed","item":{"type":"message","role":"assistant","content":[{"type":"text","text":"second assistant message"}]}}'
+EOF
+  chmod +x "$test_tmp/bin/codex"
+
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
+
+  local latest_output older_output
+  latest_output="$(
+    cd "$workdir"
+    "$INDEX" logs @latest --limit 1
+  )"
+  older_output="$(
+    cd "$workdir"
+    "$INDEX" logs @latest --limit 1 --cursor 1
+  )"
+
+  assert_contains "$latest_output" "second assistant message" "cursor=0 should return the newest assistant message"
+  assert_not_contains "$latest_output" "first assistant message" "cursor=0 should not include older message when limit=1"
+  assert_contains "$older_output" "first assistant message" "cursor=1 should return the next older assistant message"
+  assert_not_contains "$older_output" "second assistant message" "cursor=1 should not include newest message when limit=1"
+}
+
 main() {
   local test_tmp
   test_tmp="$(mktemp -d)"
@@ -567,8 +665,11 @@ main() {
   run_test test_no_agent_backward_compat "$test_tmp"
   run_test test_agent_nonexistent_errors "$test_tmp"
   run_test test_agent_codex_sandbox_inference "$test_tmp"
-  run_test test_agent_appears_in_run_id "$test_tmp"
+  run_test test_run_id_is_compact "$test_tmp"
   run_test test_agent_recorded_in_params_and_index "$test_tmp"
+  run_test test_run_index_files_regenerates_from_output_log "$test_tmp"
+  run_test test_run_index_logs_default_shows_last_message_and_flags "$test_tmp"
+  run_test test_run_index_logs_cursor_and_limit_page_messages "$test_tmp"
 
   finish_tests "run-agent unit tests"
 }

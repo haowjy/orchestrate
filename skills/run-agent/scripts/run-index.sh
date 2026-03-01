@@ -11,7 +11,7 @@
 #   list                     List runs with filtering and pagination
 #   show <run-ref>           One-run metadata summary
 #   report <run-ref>         Print report content
-#   logs <run-ref>           Paginated log browsing
+#   logs <run-ref>           Last assistant message by default + log inspection modes
 #   files <run-ref>          Print touched files
 #   stats                    Aggregate statistics
 #   continue <run-ref>       Continue a previous run's session
@@ -355,11 +355,12 @@ cmd_report() {
 }
 
 cmd_logs() {
-  local ref="${1:?Usage: run-index.sh logs <run-ref> [--summary|--tools|--errors|--search PATTERN]}"; shift
-  local mode="summary" search_pattern="" limit=200 cursor=""
+  local ref="${1:?Usage: run-index.sh logs <run-ref> [--last|--summary|--tools|--errors|--search PATTERN] [--limit N] [--cursor N]}"; shift
+  local mode="last" search_pattern="" limit=1 cursor=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --last)    mode="last"; shift ;;
       --summary) mode="summary"; shift ;;
       --tools)   mode="tools"; shift ;;
       --errors)  mode="errors"; shift ;;
@@ -369,6 +370,15 @@ cmd_logs() {
       *) echo "ERROR: Unknown logs option: $1" >&2; exit 1 ;;
     esac
   done
+
+  if ! [[ "$limit" =~ ^[1-9][0-9]*$ ]]; then
+    _error "invalid_limit" "--limit must be a positive integer (got: $limit)"
+    exit 1
+  fi
+  if ! [[ "$cursor" =~ ^[0-9]+$ ]]; then
+    _error "invalid_cursor" "--cursor must be a non-negative integer (got: $cursor)"
+    exit 1
+  fi
 
   local derived run_id
   derived="$(_build_derived_view)"
@@ -386,22 +396,167 @@ cmd_logs() {
     exit 1
   fi
 
-  if [[ -x "$inspector" ]]; then
-    case "$mode" in
-      summary) "$inspector" summary "$output_log" ;;
-      tools)   "$inspector" tools "$output_log" ;;
-      errors)  "$inspector" errors "$output_log" ;;
-      search)  "$inspector" search "$output_log" "$search_pattern" ;;
-    esac
-  else
-    # Basic fallback
-    case "$mode" in
-      summary) wc -l "$output_log" | awk '{print $1 " lines"}' ;;
-      tools)   grep -o '"tool_name":"[^"]*"' "$output_log" 2>/dev/null | sort | uniq -c | sort -rn || echo "No tool calls found." ;;
-      errors)  grep -i '"is_error":true\|"error"' "$output_log" 2>/dev/null | head -20 || echo "No errors found." ;;
-      search)  grep -n "$search_pattern" "$output_log" 2>/dev/null | head -"$limit" || echo "No matches." ;;
-    esac
-  fi
+  case "$mode" in
+    last)
+      local messages_json total_messages start_idx page_json page_count next_cursor=""
+      messages_json="$(_extract_assistant_messages_json "$output_log")"
+      total_messages="$(echo "$messages_json" | jq 'length')"
+      start_idx=$((total_messages - 1 - cursor))
+      if [[ "$start_idx" -lt 0 ]]; then
+        _error "cursor_oob" "No assistant messages at cursor $cursor for run $run_id" "Try a smaller --cursor or run-index.sh logs $run_id --summary"
+        exit 1
+      fi
+
+      page_json="$(
+        echo "$messages_json" | jq --argjson start "$start_idx" --argjson lim "$limit" '
+          [range(0; $lim) as $i
+           | ($start - $i) as $idx
+           | select($idx >= 0)
+           | {cursor: $idx, content: .[$idx]}]
+        '
+      )"
+      page_count="$(echo "$page_json" | jq 'length')"
+      if [[ $((cursor + limit)) -lt "$total_messages" ]]; then
+        next_cursor="$((cursor + limit))"
+      fi
+
+      if [[ "$JSON_MODE" == true ]]; then
+        local next_json
+        next_json="null"
+        [[ -n "$next_cursor" ]] && next_json="$next_cursor"
+        _json_ok "logs" "{
+          \"run_id\":\"$run_id\",
+          \"mode\":\"last\",
+          \"limit\":$limit,
+          \"cursor\":$cursor,
+          \"total_messages\":$total_messages,
+          \"next_cursor\":$next_json,
+          \"messages\":$page_json
+        }"
+      else
+        if [[ "$page_count" -eq 1 ]]; then
+          echo "$page_json" | jq -r '.[0].content'
+        else
+          echo "$page_json" | jq -r '.[] | "----- message(cursor=\(.cursor)) -----\n\(.content)\n"'
+        fi
+        echo ""
+        echo "Other logs flags:"
+        echo "  --summary          Structured log overview"
+        echo "  --tools            Tool call names + counts"
+        echo "  --errors           Error-focused view"
+        echo "  --search PATTERN   Search output.jsonl lines"
+        echo "  --limit N          Messages per page (default: 1)"
+        echo "  --cursor N         Offset from newest message (default: 0)"
+        if [[ -n "$next_cursor" ]]; then
+          echo "Next page: $(basename "$0") logs $run_id --limit $limit --cursor $next_cursor"
+        fi
+      fi
+      ;;
+    summary|tools|errors)
+      if [[ -x "$inspector" ]]; then
+        "$inspector" "$mode" "$output_log"
+      else
+        # Basic fallback
+        case "$mode" in
+          summary) wc -l "$output_log" | awk '{print $1 " lines"}' ;;
+          tools)   grep -o '"tool_name":"[^"]*"' "$output_log" 2>/dev/null | sort | uniq -c | sort -rn || echo "No tool calls found." ;;
+          errors)  grep -i '"is_error":true\|"error"' "$output_log" 2>/dev/null | head -20 || echo "No errors found." ;;
+        esac
+      fi
+      ;;
+    search)
+      if [[ -z "$search_pattern" ]]; then
+        _error "missing_pattern" "--search requires PATTERN"
+        exit 1
+      fi
+      local matches_json total_matches end_idx page_json next_cursor=""
+      matches_json="$(grep -n -- "$search_pattern" "$output_log" 2>/dev/null | jq -R . | jq -s '.')"
+      total_matches="$(echo "$matches_json" | jq 'length')"
+      if [[ "$total_matches" -eq 0 ]]; then
+        if [[ "$JSON_MODE" == true ]]; then
+          _json_ok "logs" "{\"run_id\":\"$run_id\",\"mode\":\"search\",\"pattern\":\"$search_pattern\",\"limit\":$limit,\"cursor\":$cursor,\"total_matches\":0,\"next_cursor\":null,\"matches\":[]}"
+        else
+          echo "No matches."
+        fi
+        return 0
+      fi
+      if [[ "$cursor" -ge "$total_matches" ]]; then
+        _error "cursor_oob" "No search matches at cursor $cursor for run $run_id" "Try a smaller --cursor"
+        exit 1
+      fi
+      end_idx=$((cursor + limit))
+      page_json="$(echo "$matches_json" | jq --argjson c "$cursor" --argjson e "$end_idx" '.[ $c : $e ]')"
+      if [[ "$end_idx" -lt "$total_matches" ]]; then
+        next_cursor="$end_idx"
+      fi
+
+      if [[ "$JSON_MODE" == true ]]; then
+        local next_json
+        next_json="null"
+        [[ -n "$next_cursor" ]] && next_json="$next_cursor"
+        _json_ok "logs" "{
+          \"run_id\":\"$run_id\",
+          \"mode\":\"search\",
+          \"pattern\":\"$search_pattern\",
+          \"limit\":$limit,
+          \"cursor\":$cursor,
+          \"total_matches\":$total_matches,
+          \"next_cursor\":$next_json,
+          \"matches\":$page_json
+        }"
+      else
+        echo "$page_json" | jq -r '.[]'
+        if [[ -n "$next_cursor" ]]; then
+          echo ""
+          echo "Next page: $(basename "$0") logs $run_id --search \"$search_pattern\" --limit $limit --cursor $next_cursor"
+        fi
+      fi
+      ;;
+    *)
+      _error "invalid_mode" "Unknown logs mode: $mode"
+      exit 1
+      ;;
+  esac
+}
+
+_extract_assistant_messages_json() {
+  local output_log="$1"
+  jq -sr '
+    def normalized_content($v):
+      if ($v | type) == "array" then
+        [ $v[]?
+          | if (type == "object") then
+              if .type == "text" then (.text // empty)
+              elif .type == "output_text" then (.text // .output_text // empty)
+              else empty end
+            elif (type == "string") then .
+            else empty end
+        ] | join("\n")
+      elif ($v | type) == "string" then $v
+      else empty
+      end;
+
+    [
+      .[] as $e
+      | (
+          if ($e.type? == "item.completed") then
+            ($e.item? // {}) as $item
+            | if (($item.role? == "assistant") or ($item.type? == "message")) then
+                normalized_content($item.content // empty)
+              else empty end
+          elif (($e.type? == "assistant") or ($e.type? == "response")) then
+            normalized_content($e.content // ($e.text // ($e.message // empty)))
+          elif ($e.type? == "result") then
+            normalized_content(($e.result.text // ($e.result.content // empty)))
+          else
+            empty
+          end
+        )
+    ]
+    | map(select(type == "string"))
+    | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))
+    | map(select(length > 0))
+  ' "$output_log" 2>/dev/null || echo "[]"
 }
 
 cmd_files() {
@@ -422,6 +577,8 @@ cmd_files() {
 
   local log_dir
   log_dir="$(echo "$derived" | jq -r --arg id "$run_id" '.[] | select(.run_id == $id) | .log_dir')"
+
+  _ensure_files_touched_artifacts "$run_id" "$log_dir"
 
   local target_file="$log_dir/files-touched.$format"
   if [[ ! -f "$target_file" ]]; then
@@ -444,6 +601,41 @@ cmd_files() {
     _json_ok "files" "{\"run_id\":\"$run_id\",\"files\":$files_json}"
   else
     cat "$target_file"
+  fi
+}
+
+_ensure_files_touched_artifacts() {
+  local run_id="$1"
+  local log_dir="$2"
+  local txt_file="$log_dir/files-touched.txt"
+  local nul_file="$log_dir/files-touched.nul"
+
+  if [[ -f "$txt_file" ]] || [[ -f "$nul_file" ]]; then
+    return 0
+  fi
+
+  local output_log="$log_dir/output.jsonl"
+  if [[ ! -f "$output_log" ]]; then
+    return 0
+  fi
+
+  local extractor
+  extractor="$(dirname "$0")/extract-files-touched.sh"
+  if [[ ! -x "$extractor" ]]; then
+    return 0
+  fi
+
+  # Prefer canonical NUL output, then derive txt.
+  if "$extractor" "$output_log" "$nul_file" --nul 2>/dev/null; then
+    tr '\0' '\n' < "$nul_file" > "$txt_file"
+    _info "Regenerated files-touched artifacts from output log for run $run_id."
+    return 0
+  fi
+
+  # Fallback to text extraction if --nul path fails.
+  if "$extractor" "$output_log" "$txt_file" 2>/dev/null; then
+    awk 'BEGIN { ORS="\0" } { print }' "$txt_file" > "$nul_file"
+    _info "Regenerated files-touched artifacts from output log for run $run_id."
   fi
 }
 
@@ -898,7 +1090,7 @@ Commands:
   list                     List runs with filtering and pagination
   show <run-ref>           One-run metadata summary
   report <run-ref>         Print report content
-  logs <run-ref>           Paginated log browsing
+  logs <run-ref>           Last assistant message by default + log inspection modes
   files <run-ref>          Print touched files
   scratch <run-ref>        List scratch files for a run
   stats                    Aggregate statistics
@@ -907,6 +1099,15 @@ Commands:
   maintain                 Archive/compact old index entries
 
 Run references: full ID, unique prefix (8+ chars), @latest, @last-failed, @last-completed
+
+Logs options:
+  --last               Default mode: print last assistant message
+  --summary            Structured log overview
+  --tools              Tool call names + counts
+  --errors             Error-focused view
+  --search PATTERN     Search output log lines
+  --limit N            Page size for --last/--search (default: 1)
+  --cursor N           Page offset for --last/--search (default: 0)
 
 Global flags:
   --json          Machine-readable JSON output

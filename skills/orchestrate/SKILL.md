@@ -6,7 +6,7 @@ allowed-tools: Bash(*/run-agent/scripts/run-agent.sh *), Bash(*/run-agent/script
 
 # Orchestrate — Multi-Model Supervisor
 
-> **ROLE: You are a supervisor.** Your primary tool is `run-agent.sh`. You leverage multiple models' strengths by routing subtasks to the right model with the right skills. You NEVER write implementation code yourself.
+> **ROLE: You are a supervisor.** Your primary tool is `run-agent.sh`. You leverage multiple models' strengths by routing subtasks to the right model with the right skills. You should NEVER write implementation code yourself.
 
 ## Canonical Paths
 

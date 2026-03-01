@@ -13,31 +13,12 @@ resolve_repo_path() {
   fi
 }
 
-# Sanitize model name for run ID: replace / with -, lowercase.
-sanitize_model_for_id() {
-  local model="$1"
-  echo "$model" | tr '/' '-' | tr '[:upper:]' '[:lower:]'
-}
-
-# Sanitize a value for use in run IDs: lowercase, replace non-[a-z0-9-] with -, collapse.
-sanitize_for_id() {
-  local val="$1"
-  val="$(echo "$val" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/--*/-/g; s/^-//; s/-$//')"
-  [[ -z "$val" ]] && val="unknown"
-  echo "$val"
-}
-
 build_run_id() {
-  local ts agent model
+  local ts suffix
   ts="$(date -u +"%Y%m%dT%H%M%SZ")"
-  # Agent name when set, otherwise "run-agent" as the default identity.
-  if [[ -n "${AGENT_NAME:-}" ]]; then
-    agent="$(sanitize_for_id "$AGENT_NAME")"
-  else
-    agent="run-agent"
-  fi
-  model="$(sanitize_model_for_id "$MODEL")"
-  echo "${ts}__${agent}__${model}__$$"
+  # Keep run IDs compact; agent/model stay in params.json + index metadata.
+  suffix="$(printf '%s%04x' "$$" "$RANDOM")"
+  echo "${ts}__${suffix}"
 }
 
 # ─── Log Setup ────────────────────────────────────────────────────────────────

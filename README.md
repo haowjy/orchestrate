@@ -30,6 +30,7 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 | `coder` | Implementation agent with full tool access |
 | `researcher` | Research and investigation with read-only access and web lookup |
 | `reviewer` | Code review with read-only access and web lookup |
+| `orchestrator` | Supervisor orchestration agent that delegates implementation, review, and verification runs |
 
 ## Installation
 
@@ -41,7 +42,7 @@ This works with any agent that can fetch URLs — Claude Code, Codex, OpenCode, 
 
 ### Alternative: plugin install
 
-Plugin install discovers skills and agents but skips runtime directory setup and MANIFEST-based filtering.
+Plugin install discovers skills and agents but skips runtime directory setup and `MANIFEST.toml`-based filtering.
 
 **Claude Code:**
 ```bash
@@ -108,7 +109,7 @@ rm -rf .agents/skills/ .claude/skills/ .agents/agents/ .claude/agents/ .orchestr
 Source (`orchestrate/` — submodule/clone):
 - `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
 - `orchestrate/agents/*.md` — agent profiles (convenience aliases with permission defaults)
-- `orchestrate/MANIFEST` — skill & agent registry for sync.sh
+- `orchestrate/MANIFEST.toml` — skill & agent registry for sync.sh
 - `orchestrate/docs/` — design documents
 
 Runtime (`.orchestrate/` — gitignored):
@@ -135,6 +136,9 @@ Pinned skills are merged with agent default skills and CLI `--skills` (deduplica
 ```bash
 RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
+
+# Recommended: launch supervisor work with an agent profile.
+"$RUNNER" --agent orchestrator -p "Execute plan at path/to/plan.md"
 
 # Run: model + skills + prompt
 "$RUNNER" --model claude-sonnet-4-6 --skills reviewing -p "Review auth changes"

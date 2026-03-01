@@ -2,7 +2,7 @@
 # sync.sh — Sync skills and agents between orchestrate source, .agents/, and .claude/.
 #
 # Default behavior (sync):
-# - syncs all skills + agents found in source dir
+# - syncs all skills + agents listed in MANIFEST.toml
 # - applies automatically when there are no conflicts
 # - blocks when conflicts exist and prints conflict list
 # - use --overwrite to apply despite conflicts
@@ -41,8 +41,8 @@ Commands:
   status   Show differences between all three locations
 
 Filtering (sync):
-  --skills skill1,skill2   Only sync specific skills (validated against MANIFEST)
-  --agents agent1,agent2   Only sync specific agent profiles (validated against MANIFEST)
+  --skills skill1,skill2   Only sync specific skills (validated against MANIFEST.toml)
+  --agents agent1,agent2   Only sync specific agent profiles (validated against MANIFEST.toml)
   --all                    Sync all skills + all agents (default behavior)
   --include-hooks          Also sync platform hooks (.cursor, .opencode) [sync only]
 
@@ -133,55 +133,107 @@ fi
 ORCHESTRATE_DIR="$SCRIPT_DIR"
 SKILLS_SRC="$ORCHESTRATE_DIR/skills"
 AGENTS_SRC="$ORCHESTRATE_DIR/agents"
-MANIFEST="$ORCHESTRATE_DIR/MANIFEST"
+MANIFEST_TOML="$ORCHESTRATE_DIR/MANIFEST.toml"
 AGENTS_SKILLS="$PROJECT_ROOT/.agents/skills"
 CLAUDE_SKILLS="$PROJECT_ROOT/.claude/skills"
 AGENTS_AGENTS="$PROJECT_ROOT/.agents/agents"
 CLAUDE_AGENTS="$PROJECT_ROOT/.claude/agents"
 
-# --- MANIFEST parsing ---
+# --- MANIFEST.toml parsing ---
 
-# Parse MANIFEST into three arrays: CORE_SKILLS, OPTIONAL_SKILLS, MANIFEST_AGENTS.
-# Sections are delimited by comment lines containing "agents" (case-insensitive).
+# Parse MANIFEST.toml into three arrays:
+# - [skills].core
+# - [skills].optional
+# - [agents].profiles
 CORE_SKILLS=()
 OPTIONAL_SKILLS=()
 MANIFEST_AGENTS=()
 
-parse_manifest() {
-  if [[ ! -f "$MANIFEST" ]]; then
-    echo "Warning: MANIFEST not found at $MANIFEST; syncing all found items." >&2
-    return
-  fi
+parse_toml_array() {
+  local section="$1"
+  local key="$2"
+  local file="$3"
 
-  local section="core"  # core -> optional -> agents
+  awk -v section="$section" -v key="$key" '
+    function trim(s) {
+      sub(/^[[:space:]]+/, "", s)
+      sub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN {
+      in_section = 0
+    }
+    {
+      line = $0
+      sub(/[[:space:]]*#.*$/, "", line)
+      line = trim(line)
+      if (line == "") next
 
-  while IFS= read -r line; do
-    # Detect section transitions from comment lines
-    if [[ "$line" =~ ^# ]]; then
-      local lower
-      lower="$(echo "$line" | tr '[:upper:]' '[:lower:]')"
-      if [[ "$lower" == *"optional skills"* ]]; then
-        section="optional"
-      elif [[ "$lower" == *"agent"* ]]; then
-        section="agents"
-      fi
-      continue
-    fi
+      if (line ~ /^\[[^]]+\]$/) {
+        sec = line
+        gsub(/^\[|\]$/, "", sec)
+        in_section = (sec == section)
+        next
+      }
 
-    # Strip remaining inline comments and whitespace
-    line="${line%%#*}"
-    line="$(echo "$line" | xargs)"
-    [[ -z "$line" ]] && continue
+      if (!in_section) next
 
-    case "$section" in
-      core)     CORE_SKILLS+=("$line") ;;
-      optional) OPTIONAL_SKILLS+=("$line") ;;
-      agents)   MANIFEST_AGENTS+=("$line") ;;
-    esac
-  done < "$MANIFEST"
+      if (line ~ ("^" key "[[:space:]]*=")) {
+        sub("^" key "[[:space:]]*=[[:space:]]*", "", line)
+        arr = line
+        if (arr !~ /\]$/) {
+          while (getline > 0) {
+            extra = $0
+            sub(/[[:space:]]*#.*$/, "", extra)
+            extra = trim(extra)
+            if (extra == "") continue
+            arr = arr " " extra
+            if (extra ~ /\]$/) break
+          }
+        }
+
+        gsub(/^\[/, "", arr)
+        gsub(/\]$/, "", arr)
+        n = split(arr, items, ",")
+        for (i = 1; i <= n; i++) {
+          item = trim(items[i])
+          gsub(/^"/, "", item)
+          gsub(/"$/, "", item)
+          gsub(/^\047/, "", item)
+          gsub(/\047$/, "", item)
+          if (item != "") print item
+        }
+        exit
+      }
+    }
+  ' "$file"
 }
 
-parse_manifest
+parse_manifest_toml() {
+  if [[ ! -f "$MANIFEST_TOML" ]]; then
+    echo "ERROR: MANIFEST.toml not found at $MANIFEST_TOML" >&2
+    exit 1
+  fi
+
+  while IFS= read -r skill; do
+    [[ -n "$skill" ]] && CORE_SKILLS+=("$skill")
+  done < <(parse_toml_array "skills" "core" "$MANIFEST_TOML")
+
+  while IFS= read -r skill; do
+    [[ -n "$skill" ]] && OPTIONAL_SKILLS+=("$skill")
+  done < <(parse_toml_array "skills" "optional" "$MANIFEST_TOML")
+
+  while IFS= read -r agent; do
+    [[ -n "$agent" ]] && MANIFEST_AGENTS+=("$agent")
+  done < <(parse_toml_array "agents" "profiles" "$MANIFEST_TOML")
+
+  if [[ ${#CORE_SKILLS[@]} -eq 0 && ${#OPTIONAL_SKILLS[@]} -eq 0 ]]; then
+    echo "ERROR: MANIFEST.toml has no skills in [skills].core or [skills].optional" >&2
+    exit 1
+  fi
+}
+
+parse_manifest_toml
 
 # --- Build sync lists based on filters ---
 
@@ -206,7 +258,7 @@ build_skill_list() {
   SYNC_SKILLS=()
 
   if [[ -n "$FILTER_SKILLS" ]]; then
-    # User specified --skills: validate each against manifest
+    # User specified --skills: validate each against MANIFEST.toml
     IFS=',' read -ra requested <<< "$FILTER_SKILLS"
     for req in "${requested[@]}"; do
       req="$(echo "$req" | xargs)"
@@ -214,7 +266,7 @@ build_skill_list() {
       if validate_name "$req" "${ALL_MANIFEST_SKILLS[@]}"; then
         SYNC_SKILLS+=("$req")
       else
-        echo "Warning: skill '$req' is not in MANIFEST. Skipping." >&2
+        echo "Warning: skill '$req' is not in MANIFEST.toml. Skipping." >&2
       fi
     done
   elif [[ -z "$FILTER_AGENTS" ]]; then
@@ -229,7 +281,7 @@ build_agent_list() {
   SYNC_AGENTS=()
 
   if [[ -n "$FILTER_AGENTS" ]]; then
-    # User specified --agents: validate each against manifest
+    # User specified --agents: validate each against MANIFEST.toml
     IFS=',' read -ra requested <<< "$FILTER_AGENTS"
     for req in "${requested[@]}"; do
       req="$(echo "$req" | xargs)"
@@ -237,7 +289,7 @@ build_agent_list() {
       if [[ ${#MANIFEST_AGENTS[@]} -gt 0 ]] && validate_name "$req" "${MANIFEST_AGENTS[@]}"; then
         SYNC_AGENTS+=("$req")
       else
-        echo "Warning: agent '$req' is not in MANIFEST. Skipping." >&2
+        echo "Warning: agent '$req' is not in MANIFEST.toml. Skipping." >&2
       fi
     done
   elif [[ -z "$FILTER_SKILLS" ]]; then
@@ -319,7 +371,6 @@ sync_platform_hooks() {
   # Sync shared hook scripts into harness-local directories.
   if [[ -d "$hooks_scripts_src" ]]; then
     local scripts_dests=(
-      "$PROJECT_ROOT/.claude/hooks/scripts"
       "$PROJECT_ROOT/.cursor/hooks/scripts"
       "$PROJECT_ROOT/.opencode/hooks/scripts"
     )
@@ -329,7 +380,7 @@ sync_platform_hooks() {
       cp "$hooks_scripts_src/"*.sh "$dest/"
       chmod +x "$dest/"*.sh
     done
-    echo "  Synced hook scripts to .claude/.cursor/.opencode hook directories"
+    echo "  Synced hook scripts to .cursor/.opencode hook directories"
   fi
 
   # OpenCode — copy orchestrate.ts plugin

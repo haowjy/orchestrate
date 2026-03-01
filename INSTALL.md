@@ -9,7 +9,7 @@ Ask the user the following. Present all questions at once, with your recommendat
 1. **Where is the target project?** — The project root where orchestrate will be installed. Default to the current working directory.
 2. **Submodule or clone?** — Recommend submodule (version-pinned, tracked by parent repo, collaborators get it automatically). Clone is simpler but untracked.
 3. **Where should orchestrate live?** — Default is `<project-root>/orchestrate/`. If the user wants it outside the repo (e.g. a shared install), they can specify a different path — `sync.sh pull --workspace <project-root>` handles this.
-4. **All skills/agents or selective?** — After cloning, read `orchestrate/MANIFEST` to see what's available. Check what already exists in `.agents/skills/` and `.claude/skills/` in the target project. Note any overlaps. Recommend `--all` for coding projects. For non-coding use cases (e.g. just building custom agents/skills), suggest selective install with `--skills` and/or `--agents`.
+4. **All skills/agents or selective?** — After cloning, read `orchestrate/MANIFEST.toml` to see what's available. Check what already exists in `.agents/skills/` and `.claude/skills/` in the target project. Note any overlaps. Recommend `--all` for coding projects. For non-coding use cases (e.g. just building custom agents/skills), suggest selective install with `--skills` and/or `--agents`.
 
 Wait for the user to confirm before proceeding.
 

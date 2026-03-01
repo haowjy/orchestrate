@@ -13,7 +13,7 @@ Two directory trees:
 Source (`orchestrate/` — submodule/clone):
 - `orchestrate/skills/*/SKILL.md` — self-describing capability building blocks
 - `orchestrate/agents/*.md` — agent profiles (convenience aliases with permission defaults)
-- `orchestrate/MANIFEST` — skill & agent registry for sync.sh
+- `orchestrate/MANIFEST.toml` — skill & agent registry for sync.sh
 - `orchestrate/docs/` — design documents
 
 Runtime (`.orchestrate/` — gitignored):

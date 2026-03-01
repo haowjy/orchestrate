@@ -228,12 +228,24 @@ validate_args() {
     echo "[run-agent] WARNING: '$routed_cli' not installed for model '$MODEL'; will fall back to $FALLBACK_MODEL ($FALLBACK_CLI)" >&2
   fi
 
-  # Skill validation (source of truth: orchestrate/skills/<name>/SKILL.md).
+  # Skill validation — check all discovery directories, not just orchestrate source.
   if [[ ${#SKILLS[@]} -gt 0 ]]; then
     local missing_skills=()
     local skill
+    local -a skill_dirs=()
+    while IFS= read -r d; do
+      skill_dirs+=("$d")
+    done < <(build_discovery_dirs "skills")
+
     for skill in "${SKILLS[@]}"; do
-      if [[ ! -f "$SKILLS_DIR/$skill/SKILL.md" ]]; then
+      local found=false
+      for d in "${skill_dirs[@]}"; do
+        if [[ -f "$d/$skill/SKILL.md" ]]; then
+          found=true
+          break
+        fi
+      done
+      if [[ "$found" == false ]]; then
         missing_skills+=("$skill")
       fi
     done
@@ -243,11 +255,11 @@ validate_args() {
       joined="$(IFS=,; echo "${missing_skills[*]}")"
       if [[ "${STRICT_SKILLS:-false}" == true ]]; then
         echo "ERROR: Unknown skill(s): $joined" >&2
-        echo "  Expected files under: $SKILLS_DIR/<skill>/SKILL.md" >&2
+        echo "  Searched: ${skill_dirs[*]}" >&2
         exit 1
       fi
       echo "[run-agent] WARNING: Unknown skill(s): $joined" >&2
-      echo "[run-agent] WARNING: Expected files under: $SKILLS_DIR/<skill>/SKILL.md" >&2
+      echo "[run-agent] WARNING: Searched: ${skill_dirs[*]}" >&2
     fi
   fi
 

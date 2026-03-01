@@ -1,6 +1,6 @@
 [skills]
 core = ["orchestrate", "run-agent"]
-optional = ["reviewing", "researching", "scratchpad", "plan-task", "mermaid", "spec-alignment"]
+optional = ["reviewing", "researching", "scratchpad", "plan-task", "mermaid", "spec-aligning"]
 
 [agents]
 profiles = ["coder", "researcher", "reviewer", "orchestrator"]

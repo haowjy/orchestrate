@@ -635,6 +635,86 @@ EOF
   assert_not_contains "$older_output" "second assistant message" "cursor=1 should not include newest message when limit=1"
 }
 
+# ─── Multi-directory Discovery Tests ────────────────────────────────────────
+
+test_agent_discovered_in_claude_agents_dir() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-discovery-agent"
+  mkdir -p "$workdir/.claude/agents"
+
+  # Create agent only in .claude/agents/ (not in orchestrate source)
+  cat > "$workdir/.claude/agents/test-discovery.md" <<'AGENT'
+---
+name: test-discovery
+description: Test agent for discovery
+model: gpt-5.3-codex
+skills: []
+---
+Discovery test agent.
+AGENT
+
+  local output
+  output="$(
+    FAKE_ARGS_LOG="$test_tmp/args-disc-agent.log" \
+    FAKE_STDIN_LOG="$test_tmp/stdin-disc-agent.log" \
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --agent test-discovery --dry-run -p "hello" -C "$workdir" 2>&1
+  )"
+
+  assert_contains "$output" "test-discovery" "agent in .claude/agents/ should be discoverable"
+  assert_not_contains "$output" "Agent profile not found" "should not error when agent is in .claude/agents/"
+}
+
+test_skill_discovered_in_claude_skills_dir() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-discovery-skill"
+  mkdir -p "$workdir/.claude/skills/test-disco-skill"
+
+  # Create skill only in .claude/skills/ (not in orchestrate source)
+  cat > "$workdir/.claude/skills/test-disco-skill/SKILL.md" <<'SKILL'
+---
+name: test-disco-skill
+description: Test skill for discovery
+---
+A test skill.
+SKILL
+
+  local output
+  output="$(
+    FAKE_ARGS_LOG="$test_tmp/args-disc-skill.log" \
+    FAKE_STDIN_LOG="$test_tmp/stdin-disc-skill.log" \
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --skills test-disco-skill --dry-run -p "hello" -C "$workdir" 2>&1
+  )"
+
+  # Should not warn about unknown skills
+  assert_not_contains "$output" "Unknown skill(s)" "skill in .claude/skills/ should be discoverable without warnings"
+}
+
+test_skill_discovered_in_agents_skills_dir() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-discovery-skill-agents"
+  mkdir -p "$workdir/.agents/skills/test-agents-skill"
+
+  cat > "$workdir/.agents/skills/test-agents-skill/SKILL.md" <<'SKILL'
+---
+name: test-agents-skill
+description: Test skill in .agents
+---
+A test skill.
+SKILL
+
+  local output
+  output="$(
+    FAKE_ARGS_LOG="$test_tmp/args-disc-agents-skill.log" \
+    FAKE_STDIN_LOG="$test_tmp/stdin-disc-agents-skill.log" \
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --skills test-agents-skill --dry-run -p "hello" -C "$workdir" 2>&1
+  )"
+
+  assert_not_contains "$output" "Unknown skill(s)" "skill in .agents/skills/ should be discoverable without warnings"
+}
+
 main() {
   local test_tmp
   test_tmp="$(mktemp -d)"
@@ -670,6 +750,11 @@ main() {
   run_test test_run_index_files_regenerates_from_output_log "$test_tmp"
   run_test test_run_index_logs_default_shows_last_message_and_flags "$test_tmp"
   run_test test_run_index_logs_cursor_and_limit_page_messages "$test_tmp"
+
+  # Multi-directory discovery tests
+  run_test test_agent_discovered_in_claude_agents_dir "$test_tmp"
+  run_test test_skill_discovered_in_claude_skills_dir "$test_tmp"
+  run_test test_skill_discovered_in_agents_skills_dir "$test_tmp"
 
   finish_tests "run-agent unit tests"
 }

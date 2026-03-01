@@ -80,6 +80,7 @@ VARIANT_FROM_CLI=false
 # Runtime state (populated during execution)
 declare -a CLI_CMD_ARGV=()
 CLI_HARNESS=""
+DISCOVERY_HARNESS=""  # early harness hint for resource discovery (set before agent loading)
 RUN_ID=""
 LOG_DIR=""
 EXIT_CODE=0
@@ -138,10 +139,21 @@ EOF
 parse_args "$@"
 init_work_dir
 
+# Derive harness early from MODEL (if known) so resource discovery uses
+# the correct search order. If --agent without --model, DISCOVERY_HARNESS
+# stays empty and build_discovery_dirs searches all dirs (harness-agnostic).
+if [[ -n "$MODEL" ]]; then
+  DISCOVERY_HARNESS="$(route_model "$MODEL" 2>/dev/null || echo "")"
+fi
+
 # Load agent profile (if --agent specified) before validation so profile
 # defaults (model, variant, skills) are available to validate_args.
 if [[ -n "$AGENT_NAME" ]]; then
   load_agent_profile
+  # Agent profile may have set MODEL — update discovery harness if it was unknown.
+  if [[ -z "$DISCOVERY_HARNESS" ]] && [[ -n "$MODEL" ]]; then
+    DISCOVERY_HARNESS="$(route_model "$MODEL" 2>/dev/null || echo "")"
+  fi
 fi
 load_pinned_skills_from_config
 

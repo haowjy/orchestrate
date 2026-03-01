@@ -14,4 +14,4 @@ reviewing
 scratchpad
 researching
 mermaid
-backlog-managing
+spec-aligning

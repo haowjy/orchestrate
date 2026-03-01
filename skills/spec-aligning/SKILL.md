@@ -1,5 +1,5 @@
 ---
-name: spec-alignment
+name: spec-aligning
 description: Verifies implementation aligns with stated requirements and acceptance criteria. Use before implementation (to clarify scope) and before final sign-off (to detect gaps).
 ---
 

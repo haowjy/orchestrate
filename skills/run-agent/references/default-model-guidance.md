@@ -4,11 +4,14 @@ Use this default only when no custom files exist in `references/model-guidance/*
 
 ## Baseline picks
 
+codex as an alias for `gpt-5.3-codex`
+opus as an alias for `claude-opus-4-6`
+
 - Implementation: `gpt-5.3-codex`
-- Review (medium/high risk): fan out across model families
-- Fast/iterative UI loops: `claude-sonnet-4-6`
-- Nuanced correctness/architecture: `claude-opus-4-6`
-- Lightweight commit/message tasks: `claude-haiku-4-5`
+- Review (medium/high risk): fan out across model families, prefer `gpt-5.3-codex` for most reviews to be cheaper and more thorough.
+- Nuanced correctness/architecture: `claude-opus-4-6` and/or `gpt-5.2` with high variant
+- UI/frontend loops: `claude-opus-4-6`
+- Lightweight commit/message tasks: `claude-haiku-4-5` to help create commits for the changes
 
 ## Practical rules
 

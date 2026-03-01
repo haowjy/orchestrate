@@ -9,10 +9,20 @@
 
 load_skill() {
   local name="$1"
-  local skill_file="$SKILLS_DIR/$name/SKILL.md"
+  local skill_file=""
 
-  if [[ ! -f "$skill_file" ]]; then
-    echo "ERROR: Skill not found: $skill_file" >&2
+  # Search discovery dirs for the skill
+  while IFS= read -r d; do
+    local candidate="$d/$name/SKILL.md"
+    if [[ -f "$candidate" ]]; then
+      skill_file="$candidate"
+      break
+    fi
+  done < <(build_discovery_dirs "skills")
+
+  if [[ -z "$skill_file" ]]; then
+    echo "ERROR: Skill not found: $name" >&2
+    echo "  Searched: $(build_discovery_dirs "skills" | tr '\n' ' ')" >&2
     return 1
   fi
 
@@ -209,12 +219,94 @@ load_pinned_skills_from_config() {
   )
 }
 
+# ─── Resource Discovery ─────────────────────────────────────────────────────
+# Returns ordered list of directories to search for skills or agents,
+# based on the current harness. Whatever the orchestrating harness can
+# find natively, run-agent.sh should find too.
+#
+# Priority: harness-own dir (repo) → orchestrate source → harness-own dir
+# (global/home) → other harness dirs (repo).
+#
+# Usage: build_discovery_dirs "skills" or build_discovery_dirs "agents"
+# Expects DISCOVERY_HARNESS to be set (or empty for harness-agnostic order).
+
+build_discovery_dirs() {
+  local resource_type="$1"  # "skills" or "agents"
+  local harness="${DISCOVERY_HARNESS:-}"
+  local -a dirs=()
+  local -A seen=()
+
+  _add_dir() {
+    local d="$1"
+    [[ -z "$d" ]] && return
+    # Resolve to absolute and dedup
+    local abs
+    abs="$(cd "$d" 2>/dev/null && pwd -P)" 2>/dev/null || abs="$d"
+    [[ -n "${seen[$abs]:-}" ]] && return
+    seen[$abs]=1
+    dirs+=("$d")
+  }
+
+  # Harness-own repo directories
+  case "$harness" in
+    claude)
+      _add_dir "$REPO_ROOT/.claude/$resource_type"
+      ;;
+    codex)
+      _add_dir "$REPO_ROOT/.agents/$resource_type"
+      ;;
+    opencode)
+      _add_dir "$REPO_ROOT/.agents/$resource_type"
+      _add_dir "$REPO_ROOT/.opencode/$resource_type"
+      ;;
+    *)
+      # Harness unknown — search all repo-level dirs first
+      _add_dir "$REPO_ROOT/.claude/$resource_type"
+      _add_dir "$REPO_ROOT/.agents/$resource_type"
+      _add_dir "$REPO_ROOT/.opencode/$resource_type"
+      _add_dir "$REPO_ROOT/.cursor/$resource_type"
+      ;;
+  esac
+
+  # Orchestrate source (always second priority)
+  if [[ "$resource_type" == "skills" ]]; then
+    _add_dir "$SKILLS_DIR"
+  else
+    _add_dir "$AGENTS_DIR"
+  fi
+
+  # Harness-own global/home directories
+  case "$harness" in
+    claude)
+      _add_dir "$HOME/.claude/$resource_type"
+      ;;
+    opencode)
+      _add_dir "$HOME/.config/opencode/$resource_type"
+      ;;
+  esac
+
+  # Other harness dirs (repo-level, lower priority)
+  _add_dir "$REPO_ROOT/.claude/$resource_type"
+  _add_dir "$REPO_ROOT/.agents/$resource_type"
+  _add_dir "$REPO_ROOT/.opencode/$resource_type"
+  _add_dir "$REPO_ROOT/.cursor/$resource_type"
+
+  # Global fallbacks (if not already added)
+  _add_dir "$HOME/.claude/$resource_type"
+
+  printf '%s\n' "${dirs[@]}"
+}
+
 # ─── Agent Loading ──────────────────────────────────────────────────────────
 # Searches discovery dirs in order, returns path to first <name>.md found.
 
 resolve_agent_file() {
   local name="$1"
-  local dirs=("$AGENTS_DIR" "$REPO_ROOT/.agents/agents" "$REPO_ROOT/.claude/agents")
+  local -a dirs=()
+  while IFS= read -r d; do
+    dirs+=("$d")
+  done < <(build_discovery_dirs "agents")
+
   for dir in "${dirs[@]}"; do
     local candidate="$dir/$name.md"
     if [[ -f "$candidate" ]]; then

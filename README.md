@@ -22,7 +22,7 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 | `scratchpad` | Conventions for disposable scratch code and verification scripts. Use when writing smoke tests, quick probes, or temporary artifacts during task execution |
 | `plan-task` | Breaks the next task from a plan into an implementable task file. Use when decomposing a multi-step plan into ordered work units |
 | `mermaid` | Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation |
-| `spec-alignment` | Verifies implementation aligns with stated requirements and acceptance criteria. Use before implementation for scope clarity and before sign-off to detect gaps |
+| `spec-aligning` | Verifies implementation aligns with stated requirements and acceptance criteria. Use before implementation for scope clarity and before sign-off to detect gaps |
 
 ### Agent profiles
 
@@ -301,13 +301,22 @@ Explicit `sandbox:` field always overrides inference.
 
 ### Discovery Order
 
-`--agent <name>` searches these directories in order (first match wins):
+Skills and agent profiles are discovered from the same directories the primary agent harness scans natively. The search order depends on the harness (derived from the model), with the harness's own directory first:
 
-1. `orchestrate/agents/<name>.md` — bundled source
-2. `.agents/agents/<name>.md` — installed copies + user-created (OpenCode reads this)
-3. `.claude/agents/<name>.md` — installed copies + user-created (Claude Code reads this)
+**Agents** (`--agent <name>` searches for `<name>.md`):
 
-To create a custom agent, add a `.md` file in `.claude/agents/` or `.agents/agents/`.
+| Priority | Claude harness | Codex harness | OpenCode harness |
+|---|---|---|---|
+| 1 (harness-own) | `.claude/agents/` | `.agents/agents/` | `.agents/agents/` |
+| 2 (source) | `orchestrate/agents/` | `orchestrate/agents/` | `orchestrate/agents/` |
+| 3 (global) | `~/.claude/agents/` | — | — |
+| 4+ (other) | `.agents/agents/`, `.opencode/agents/`, `.cursor/agents/` | `.claude/agents/`, `.opencode/agents/`, `.cursor/agents/` | `.claude/agents/`, `.cursor/agents/` |
+
+**Skills** follow the same pattern, searching for `<name>/SKILL.md` in each directory.
+
+If the harness is unknown (e.g., `--agent` without `--model`), all directories are searched in a harness-agnostic order.
+
+To create a custom agent, add a `.md` file in your harness's agent directory (e.g., `.claude/agents/` for Claude Code).
 
 ## Security
 

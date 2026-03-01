@@ -22,6 +22,7 @@ A run is `model + skills + prompt`. Skills are discovered at runtime from `orche
 | `scratchpad` | Conventions for disposable scratch code and verification scripts. Use when writing smoke tests, quick probes, or temporary artifacts during task execution |
 | `plan-task` | Breaks the next task from a plan into an implementable task file. Use when decomposing a multi-step plan into ordered work units |
 | `mermaid` | Rules and validation for Mermaid diagrams. Use when creating or editing Mermaid diagrams in documentation |
+| `spec-alignment` | Verifies implementation aligns with stated requirements and acceptance criteria. Use before implementation for scope clarity and before sign-off to detect gaps |
 
 ### Agent profiles
 

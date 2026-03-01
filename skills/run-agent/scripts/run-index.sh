@@ -661,7 +661,7 @@ cmd_retry() {
   if [[ "$dry_run" == true ]]; then
     echo "DRY RUN: Would retry run $run_id"
     echo "  Model: ${model_override:-$(echo "$run" | jq -r '.model')}"
-    echo "  Prompt: ${prompt_override:-(from original input.md)}"
+    echo "  Prompt: ${prompt_override:-(from original prompt.raw.md or input.md)}"
     exit 0
   fi
 
@@ -678,9 +678,12 @@ cmd_retry() {
   orig_skills="$(jq -r '.skills // [] | join(",")' "$params_file")"
   orig_agent="$(jq -r '.agent // empty' "$params_file" 2>/dev/null || echo "")"
 
-  # Read original prompt from input.md
+  # Read original pre-runtime prompt when available.
+  # Fallback to input.md for backward compatibility with older runs.
   orig_prompt=""
-  if [[ -f "$log_dir/input.md" ]]; then
+  if [[ -f "$log_dir/prompt.raw.md" ]]; then
+    orig_prompt="$(cat "$log_dir/prompt.raw.md")"
+  elif [[ -f "$log_dir/input.md" ]]; then
     orig_prompt="$(cat "$log_dir/input.md")"
   fi
 
@@ -864,6 +867,7 @@ while [[ $# -gt 0 ]]; do
     --no-color) NO_COLOR=true; shift ;;
     --quiet)    QUIET=true; shift ;;
     --repo)     REPO_ROOT="$2"; ORCHESTRATE_ROOT="$2/.orchestrate"; INDEX_FILE="$2/.orchestrate/index/runs.jsonl"; shift 2 ;;
+    -h|--help)  ARGS+=("help"); shift ;;
     *)          ARGS+=("$1"); shift ;;
   esac
 done

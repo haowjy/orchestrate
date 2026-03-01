@@ -65,7 +65,7 @@ write_log_params() {
   labels_json="$(build_labels_json)"
   now_utc="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   session_id="${SESSION_ID:-$RUN_ID}"
-  timeout_minutes="${TIMEOUT_MINUTES:-15}"
+  timeout_minutes="${TIMEOUT_MINUTES:-${DEFAULT_TIMEOUT_MINUTES:-30}}"
 
   cat > "$LOG_DIR/params.json" <<EOF
 {

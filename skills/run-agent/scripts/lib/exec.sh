@@ -513,7 +513,11 @@ do_execute() {
   # Record start time for duration tracking
   _run_start_epoch="$(date +%s)"
 
-  # Append output directory and report instruction now that LOG_DIR is known
+  # Save composed prompt before run-time instructions are appended.
+  # This is used by retry to avoid duplicating generated sections.
+  echo "$COMPOSED_PROMPT" > "$LOG_DIR/prompt.raw.md"
+
+  # Append output directory and report instruction now that LOG_DIR is known.
   COMPOSED_PROMPT+="$(build_output_dir_instruction "$LOG_DIR")"
   COMPOSED_PROMPT+="$(build_report_instruction "$LOG_DIR/report.md" "$DETAIL")"
 

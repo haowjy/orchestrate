@@ -158,6 +158,9 @@ test_retry_uses_original_prompt_and_records_retries() {
   local input_md
   input_md="$(cat "$latest_dir/input.md")"
   assert_contains "$input_md" "original prompt" "retry should preserve the original prompt content"
+  local report_count
+  report_count="$(grep -c '^# Report$' <<< "$input_md" || true)"
+  assert_eq "$report_count" "1" "retry should not duplicate generated report sections"
   assert_not_contains "$input_md" $'\n-\n' "retry prompt should not degrade to a literal dash"
 
   local latest_finalize
@@ -264,6 +267,121 @@ EOF
   assert_contains "$(cat "$run_dir/report.md")" "Timed out" "timeout report should explain failure"
 }
 
+test_orchestrate_config_template_is_auto_created() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-config-template"
+  mkdir -p "$workdir"
+
+  FAKE_ARGS_LOG="$test_tmp/args-config-template.log" \
+  FAKE_STDIN_LOG="$test_tmp/stdin-config-template.log" \
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
+
+  local config_file="$workdir/.orchestrate/config.toml"
+  assert_file_exists "$config_file" "run should auto-create .orchestrate/config.toml"
+
+  local config_text
+  config_text="$(cat "$config_file")"
+  assert_contains "$config_text" "# [skills]" "config template should include commented skills table"
+  assert_contains "$config_text" "# pinned = [\"orchestrate\", \"run-agent\", \"mermaid\"]" "config template should include commented pinned skills example"
+}
+
+test_pinned_skills_load_from_config() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-config-pinned-skills"
+  mkdir -p "$workdir/.orchestrate"
+
+  cat > "$workdir/.orchestrate/config.toml" <<'EOF'
+[skills]
+pinned = ["orchestrate", "run-agent", "mermaid"]
+EOF
+
+  local output
+  output="$(
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --dry-run --prompt "hello" -C "$workdir" 2>&1
+  )"
+
+  assert_contains "$output" "Skills: orchestrate run-agent mermaid" "dry run should include pinned skills from .orchestrate/config.toml"
+}
+
+test_pinned_skills_multiline_array_loads() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-config-pinned-multiline"
+  mkdir -p "$workdir/.orchestrate"
+
+  cat > "$workdir/.orchestrate/config.toml" <<'EOF'
+[skills]
+pinned = [
+  "orchestrate",
+  "run-agent",
+  "mermaid",
+]
+EOF
+
+  local output
+  output="$(
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --dry-run --prompt "hello" -C "$workdir" 2>&1
+  )"
+
+  assert_contains "$output" "Skills: orchestrate run-agent mermaid" "multiline pinned skills should load from TOML"
+}
+
+test_pinned_skills_hash_in_quotes_is_not_treated_as_comment() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-config-pinned-hash"
+  mkdir -p "$workdir/.orchestrate"
+
+  cat > "$workdir/.orchestrate/config.toml" <<'EOF'
+[skills]
+pinned = ["orchestrate", "team#1"]
+EOF
+
+  local output
+  output="$(
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --dry-run --prompt "hello" -C "$workdir" 2>&1
+  )"
+
+  assert_contains "$output" "Skills: orchestrate team#1" "quoted # should be preserved in pinned skill values"
+}
+
+test_strict_skills_errors_on_unknown_skills() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-strict-skills"
+  mkdir -p "$workdir"
+
+  local output
+  output="$(
+    PATH="$test_tmp/bin:$PATH" \
+    "$RUNNER" --model gpt-5.3-codex --strict-skills --skills definitely-missing --prompt "hello" -C "$workdir" 2>&1 || true
+  )"
+  assert_contains "$output" "ERROR: Unknown skill(s): definitely-missing" "--strict-skills should fail on unknown skills"
+}
+
+test_invalid_args_do_not_create_runtime_dirs() {
+  local test_tmp="$1"
+  local workdir="$test_tmp/work-invalid-args-no-side-effects"
+  mkdir -p "$workdir"
+
+  PATH="$test_tmp/bin:$PATH" \
+  "$RUNNER" --model gpt-5.3-codex --timeout not-a-number --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null || true
+
+  assert_file_not_exists "$workdir/.orchestrate/config.toml" "invalid args should not create runtime config"
+}
+
+test_help_flags_exit_zero() {
+  local test_tmp="$1"
+  local output
+
+  output="$("$RUNNER" --help 2>&1)"
+  assert_contains "$output" "Usage: run-agent.sh [OPTIONS]" "run-agent --help should print usage"
+
+  output="$("$INDEX" --help 2>&1)"
+  assert_contains "$output" "Usage: run-index.sh <command> [options]" "run-index --help should print usage"
+}
+
 # ─── Agent Profile Tests ────────────────────────────────────────────────────
 
 test_agent_dry_run_shows_correct_metadata() {
@@ -278,14 +396,14 @@ test_agent_dry_run_shows_correct_metadata() {
   )"
 
   assert_contains "$output" "Agent: reviewer" "dry run should show agent name"
-  assert_contains "$output" "Model: claude-sonnet-4-6" "dry run should show agent's default model"
+  assert_contains "$output" "Model: gpt-5.3-codex" "dry run should show agent's default model"
   assert_contains "$output" "Variant: high" "dry run should show agent's default variant"
-  assert_contains "$output" "Skills: review" "dry run should show agent's default skills"
+  assert_contains "$output" "Skills: reviewing" "dry run should show agent's default skills"
   assert_contains "$output" "Tools: Read,Glob,Grep,Bash,WebSearch,WebFetch" "dry run should show agent's tools"
   assert_contains "$output" "Sandbox: danger-full-access" "dry run should show agent's sandbox"
-  # Claude Code should use --agent flag, not --dangerously-skip-permissions
-  assert_contains "$output" "--agent reviewer" "claude harness should pass --agent natively"
-  assert_not_contains "$output" "--dangerously-skip-permissions" "agent run should not use dangerous flag"
+  # Codex should enforce sandbox and avoid dangerous fallback flags.
+  assert_contains "$output" "--sandbox danger-full-access" "codex harness should receive sandbox from reviewer profile"
+  assert_not_contains "$output" "--dangerously-bypass-approvals-and-sandbox" "agent run should not use dangerous bypass when sandbox is explicit"
 }
 
 test_agent_cli_model_overrides_profile() {
@@ -374,6 +492,8 @@ test_agent_appears_in_run_id() {
   local workdir="$test_tmp/work-agent-runid"
   mkdir -p "$workdir"
 
+  FAKE_ARGS_LOG="$test_tmp/args-agent-runid.log" \
+  FAKE_STDIN_LOG="$test_tmp/stdin-agent-runid.log" \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --agent reviewer --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
 
@@ -390,6 +510,8 @@ test_agent_recorded_in_params_and_index() {
   local workdir="$test_tmp/work-agent-params"
   mkdir -p "$workdir"
 
+  FAKE_ARGS_LOG="$test_tmp/args-agent-params.log" \
+  FAKE_STDIN_LOG="$test_tmp/stdin-agent-params.log" \
   PATH="$test_tmp/bin:$PATH" \
   "$RUNNER" --agent reviewer --prompt "hello" -C "$workdir" >/dev/null 2>/dev/null
 
@@ -430,6 +552,13 @@ main() {
   run_test test_claude_empty_output_fails_fast "$test_tmp"
   run_test test_opencode_error_event_fails_fast "$test_tmp"
   run_test test_timeout_kills_hung_harness "$test_tmp"
+  run_test test_orchestrate_config_template_is_auto_created "$test_tmp"
+  run_test test_pinned_skills_load_from_config "$test_tmp"
+  run_test test_pinned_skills_multiline_array_loads "$test_tmp"
+  run_test test_pinned_skills_hash_in_quotes_is_not_treated_as_comment "$test_tmp"
+  run_test test_strict_skills_errors_on_unknown_skills "$test_tmp"
+  run_test test_invalid_args_do_not_create_runtime_dirs "$test_tmp"
+  run_test test_help_flags_exit_zero "$test_tmp"
 
   # Agent profile tests
   run_test test_agent_dry_run_shows_correct_metadata "$test_tmp"

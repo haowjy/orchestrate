@@ -54,6 +54,11 @@ assert_file_exists() {
   [[ -f "$file" ]] || fail "  $msg: $file"
 }
 
+assert_file_not_exists() {
+  local file="$1" msg="$2"
+  [[ ! -e "$file" ]] || fail "  $msg: $file"
+}
+
 assert_eq() {
   local actual="$1" expected="$2" msg="$3"
   if [[ "$actual" != "$expected" ]]; then
@@ -78,7 +83,13 @@ run_test() {
   _capture_file="$(mktemp)"
 
   local exit_code=0
-  ( $test_fn "$@" ) > "$_capture_file" 2>&1 || exit_code=$?
+  set +e
+  (
+    set -euo pipefail
+    "$test_fn" "$@"
+  ) > "$_capture_file" 2>&1
+  exit_code=$?
+  set -e
 
   local output=""
   if [[ -s "$_capture_file" ]]; then

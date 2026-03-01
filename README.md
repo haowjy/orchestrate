@@ -114,6 +114,21 @@ Source (`orchestrate/` — submodule/clone):
 Runtime (`.orchestrate/` — gitignored):
 - `.orchestrate/runs/agent-runs/<run-id>/` — flat per-run artifacts
 - `.orchestrate/index/runs.jsonl` — append-only two-row index (start + finalize)
+- `.orchestrate/config.toml` — optional runtime config (auto-created with commented defaults)
+
+### Runtime Config (`.orchestrate/config.toml`)
+
+`run-agent.sh` auto-creates `.orchestrate/config.toml` on first use.  
+By default it is commented out; uncomment and edit as needed.
+
+Example pinned skills:
+
+```toml
+[skills]
+pinned = ["orchestrate", "run-agent", "mermaid"]
+```
+
+Pinned skills are merged with agent default skills and CLI `--skills` (deduplicated by skill name).
 
 ## Quick Start
 
@@ -122,7 +137,7 @@ RUNNER=orchestrate/skills/run-agent/scripts/run-agent.sh
 INDEX=orchestrate/skills/run-agent/scripts/run-index.sh
 
 # Run: model + skills + prompt
-"$RUNNER" --model claude-sonnet-4-6 --skills review -p "Review auth changes"
+"$RUNNER" --model claude-sonnet-4-6 --skills reviewing -p "Review auth changes"
 
 # Run with an agent profile
 "$RUNNER" --agent reviewer -p "Review auth changes"
@@ -218,7 +233,7 @@ Agent profiles are convenience aliases with default skills, model preferences, a
 ---
 name: reviewer
 description: Code review with read-only access and web lookup
-model: claude-sonnet-4-6
+model: gpt-5.3-codex
 variant: high
 skills: [reviewing]
 tools: [Read, Glob, Grep, Bash, WebSearch, WebFetch]
@@ -228,7 +243,7 @@ variant-models:
   - gpt-5.3-codex
 ---
 
-Review code against project conventions and SOLID principles.
+Review code against project conventions.
 ```
 
 ### Usage
@@ -256,6 +271,8 @@ Review code against project conventions and SOLID principles.
 | `tools` | list | LLM tool allowlist. Claude Code: `--allowedTools`. Codex: inferred sandbox. |
 | `sandbox` | string | Codex sandbox tier: `read-only`, `workspace-write`, `danger-full-access` |
 | `variant-models` | list | Models for fan-out (future) |
+
+CLI option: pass `--strict-skills` to fail fast when any listed skill is unknown.
 
 ### Harness Behavior
 

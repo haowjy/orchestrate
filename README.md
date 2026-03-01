@@ -4,6 +4,8 @@ Intent-first multi-model primary-agent toolkit for Claude Code, Codex, and OpenC
 
 A run is `model + skills + prompt`. Skills are discovered at runtime from `orchestrate/skills/*/SKILL.md` frontmatter — no static agent definitions.
 
+NOTE: currently rewriting in Python and not using shell scripts: https://github.com/haowjy/meridian-channel 
+
 ## What's Inside
 
 ### Core skills (always installed)
